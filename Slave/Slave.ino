@@ -1,28 +1,25 @@
 //ESP8266 - Webserver/client and basic sensors with SD card config
-#include <ArduinoJson.h>
-#include <SPI.h>
 #include <SD.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
+#include <SparkFunBME280.h>
 #include <ESP8266WebServer.h>
-#include <stdint.h>
-#include "SparkFunBME280.h"
-#include "Wire.h"
 
-#define DEBUG_PIN  10
-#define MAX_GPIO 4
+#define MAX_GPIO 8
+#define STATUS_PORT 10
 
+BME280 bme280;
 ESP8266WebServer server(80);
 String json;
 const char* postHost;
 int portHost;
-int gpioValues[] = { -1, -1, -1, -1};
-int gpioValuesToUpdate[] = { -1, -1, -1, -1};
-int gpioMappings[] = {15,3,5,16};
-int gpioPortMappings[] = {0,0,0,0};
+byte expanderValue = 255;
+byte oldInputValue = 0;
+byte addressUpdated = 0;
 int id;
-
-//Sensors
-BME280 bme280;
+int count;
 
 void setup()
 {
@@ -33,11 +30,22 @@ void setup()
   //Debug
   Serial.begin(9600);
   delay(10);
-  pinMode(DEBUG_PIN,OUTPUT); 
-  digitalWrite(DEBUG_PIN, 1);
 
-  //Setup SD Card
-  if (!SD.begin(4)) {
+  pinMode(STATUS_PORT, OUTPUT);
+  digitalWrite(STATUS_PORT, HIGH);
+  
+  //Setup expansion port
+  //GPIO 5 - SDA
+  //GPIO 4 - CLK
+  Wire.begin(5, 4);
+
+  //Clear the Expander of any latched ports
+  Wire.beginTransmission(0x20);
+  Wire.write(0xFF);
+  Wire.endTransmission(); 
+
+  //Setup SD Card with select pin on 16
+  if (!SD.begin(16)) {
     while(true){
       debug(200);
     }
@@ -97,20 +105,6 @@ void setup()
   //Update Home Page Controls
   homeStatus.replace("{{friendlyName}}", identity);
 
-  JsonArray& gpio = root["GPIO"];
-
-  for(int a=0;a<MAX_GPIO;a++){
-    int pin = gpio[a]["PIN"];
-    int value = gpio[a]["VALUE"];
-    pinMode(gpioMappings[pin -1], value);
-    gpioPortMappings[a] = value;
-  }
-
-  //Reset all PINS
-  for(int a=0;a<MAX_GPIO;a++){
-    digitalWrite(gpioMappings[a], 0);
-  }
-
   //Documentation
   server.on("/", [homeStatus](){
     String temp = homeStatus.substring(0); 
@@ -119,10 +113,10 @@ void setup()
     temp.replace("{{pressure}}", String(bme280.readFloatPressure()));
     temp.replace("{{altitude}}", String(bme280.readFloatAltitudeMeters()));
     temp.replace("{{humidity}}", String(bme280.readFloatHumidity()));
-    temp.replace("{{gpio1}}", String(digitalRead(gpioMappings[0])));
-    temp.replace("{{gpio2}}", String(digitalRead(gpioMappings[1])));
-    temp.replace("{{gpio3}}", String(digitalRead(gpioMappings[2])));
-    temp.replace("{{gpio4}}", String(digitalRead(gpioMappings[3])));
+    temp.replace("{{gpio1}}", String(!bitRead(expanderValue, 0)));
+    temp.replace("{{gpio2}}", String(!bitRead(expanderValue, 1)));
+    temp.replace("{{gpio3}}", String(!bitRead(expanderValue, 2)));
+    temp.replace("{{gpio4}}", String(!bitRead(expanderValue, 3)));
     server.send(200, "text/html", temp);
   }); 
 
@@ -136,12 +130,6 @@ void setup()
   
   server.begin();
 
-  //Ready
-  digitalWrite(DEBUG_PIN, 1);
-  delay(3000);
-  digitalWrite(DEBUG_PIN, 0);
-
-  bme280.settings.commInterface = I2C_MODE;
   bme280.settings.I2CAddress = 0x77;
   bme280.settings.runMode = 3;
   bme280.settings.tStandby = 2;
@@ -163,37 +151,49 @@ void loop()
   //Handle a client
   server.handleClient();
 
-  int value = 0;
+  count++;
   bool changed = false;
-  for(int a=0;a<MAX_GPIO;a++){
-    gpioValuesToUpdate[a] = gpioValues[a];
-    if(gpioValues[a] != (value = digitalRead(gpioMappings[a]))){
-        gpioValues[a] = value;
-        changed = true;
+
+  //Poll inputs every 2 seconds on i2c. I know it's sadness :(
+  if(count == 20){
+    Wire.requestFrom(0x20,1); 
+    if(Wire.available())
+    {
+      int result = Wire.read();
+      for(int a=0;a<MAX_GPIO;a++){
+        bool preValue = bitRead(oldInputValue, a);
+        bool currentValue = bitRead(result, a);
+        if(preValue != currentValue){
+          bitWrite(oldInputValue, a, currentValue);
+          bitWrite(addressUpdated, a, 1);
+          changed = true;
+        }
+      }
     }
+    count = 0;
   }
+
+  //Update host
   if(changed){
+    Serial.println("Updating");
     sendUpdate();
+  }
+  else{
+    delay(100); 
   }
 }
 
 void updateGPIO(){
     DynamicJsonBuffer jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(server.arg("plain"));
-    int gpio[] = {-1, -1, -1, -1};
     for(int a=0;a<MAX_GPIO;a++){
         int pin = root["GPIO"][a]["PIN"];
         int pinValue = root["GPIO"][a]["VALUE"];
         if(pin != 0){
-          gpio[pin-1] = pinValue;
+           sendExpanderValue(!pinValue, (pin-1));
         }
     }
-    for(int a=0;a<2;a++){
-       if(gpio[a] != -1){
-          digitalWrite(gpioMappings[a], gpio[a]);
-       }
-    }
-    server.send(200, "text/plain");
+    getGPIO();
 }
 
 void getGPIO(){
@@ -204,7 +204,7 @@ void getGPIO(){
   for(int a=0;a<MAX_GPIO;a++){
       JsonObject& nestedObject = nestedArray.createNestedObject();
       nestedObject["PIN"] = a + 1;
-      nestedObject["VALUE"] = digitalRead(gpioMappings[a]);
+      nestedObject["VALUE"] = (int)!bitRead(expanderValue, a);
   }
   char responseString[response.measureLength()+1];
   response.printTo(responseString, response.measureLength()+1);
@@ -229,6 +229,7 @@ void sendUpdate(){
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
   const char* host = root["HOST"];
+  const char* url = root["URL"];
   const int port = root["PORT"];
   if (client.connect(host, port)) {
     DynamicJsonBuffer jsonBuffer;
@@ -237,16 +238,20 @@ void sendUpdate(){
     JsonArray& gpioArray = response.createNestedArray("GPIO");
     for(int a=0;a<MAX_GPIO;a++){
       JsonObject& gpioObject = jsonBuffer.createObject();
-      if(gpioValuesToUpdate[a] != gpioValues[a]){
-        gpioObject["PIN"] = a + 1;
-        gpioObject["VALUE"] = gpioValues[a];
-        gpioArray.add(gpioObject);
-        gpioValuesToUpdate[a] = gpioValues[a];
+  
+      for(int a=0;a<MAX_GPIO;a++){
+        if(bitRead(addressUpdated, a)){
+          gpioObject["PIN"] = a + 1;
+          gpioObject["VALUE"] = bitRead(oldInputValue, a);
+          gpioArray.add(gpioObject);
+
+          bitWrite(addressUpdated, a, 0);
+        }
       }
     }
-    
+
     client.println("POST /api/values/post HTTP/1.1");
-    client.println("Host: httpbin.org");
+    client.println("Host: hostbin.org");
     client.println("Cache-Control: no-cache");
     client.println("Content-Type: application/json");
     client.println("Connection: close");
@@ -268,9 +273,16 @@ String ipToString(IPAddress ip){
 }
 
 void debug(int ms){
-    digitalWrite(DEBUG_PIN, 1);
-    delay(ms);
-    digitalWrite(DEBUG_PIN, 0);
-    delay(ms);
+  digitalWrite(STATUS_PORT, HIGH);
+  delay(ms);
+  digitalWrite(STATUS_PORT, LOW);
+  delay(ms);
+}
+
+void sendExpanderValue(int value, int port){
+  bitWrite(expanderValue, port, value);
+  Wire.beginTransmission(0x20);
+  Wire.write(expanderValue);
+  Wire.endTransmission(); 
 }
 
