@@ -16,7 +16,6 @@ String json;
 const char* postHost;
 int portHost;
 byte expanderValue = 255;
-byte oldInputValue = 0;
 byte addressUpdated = 0;
 int id;
 int count;
@@ -33,6 +32,9 @@ void setup()
 
   pinMode(STATUS_PORT, OUTPUT);
   digitalWrite(STATUS_PORT, HIGH);
+
+  //Analog Input - NodeMCU 0-3.3v
+  pinMode(A0, INPUT);
   
   //Setup expansion port
   //GPIO 5 - SDA
@@ -117,6 +119,10 @@ void setup()
     temp.replace("{{gpio2}}", String(!bitRead(expanderValue, 1)));
     temp.replace("{{gpio3}}", String(!bitRead(expanderValue, 2)));
     temp.replace("{{gpio4}}", String(!bitRead(expanderValue, 3)));
+    temp.replace("{{gpio5}}", String(!bitRead(expanderValue, 4)));
+    temp.replace("{{gpio6}}", String(!bitRead(expanderValue, 5)));
+    temp.replace("{{gpio7}}", String(!bitRead(expanderValue, 6)));
+    temp.replace("{{gpio8}}", String(!bitRead(expanderValue, 7)));
     server.send(200, "text/html", temp);
   }); 
 
@@ -154,17 +160,23 @@ void loop()
   count++;
   bool changed = false;
 
-  //Poll inputs every 2 seconds on i2c. I know it's sadness :(
-  if(count == 20){
+  if(count == 10){
+    int value = analogRead(A0);
+    if(value < 320){
+      sendExpanderValue(0, 0);
+    }
+    else{
+      sendExpanderValue(1, 0);
+    }
     Wire.requestFrom(0x20,1); 
     if(Wire.available())
     {
       int result = Wire.read();
       for(int a=0;a<MAX_GPIO;a++){
-        bool preValue = bitRead(oldInputValue, a);
+        bool preValue = bitRead(expanderValue, a);
         bool currentValue = bitRead(result, a);
         if(preValue != currentValue){
-          bitWrite(oldInputValue, a, currentValue);
+          bitWrite(expanderValue, a, currentValue);
           bitWrite(addressUpdated, a, 1);
           changed = true;
         }
@@ -242,7 +254,7 @@ void sendUpdate(){
       for(int a=0;a<MAX_GPIO;a++){
         if(bitRead(addressUpdated, a)){
           gpioObject["PIN"] = a + 1;
-          gpioObject["VALUE"] = bitRead(oldInputValue, a);
+          gpioObject["VALUE"] = bitRead(expanderValue, a);
           gpioArray.add(gpioObject);
 
           bitWrite(addressUpdated, a, 0);
@@ -279,7 +291,7 @@ void debug(int ms){
   delay(ms);
 }
 
-void sendExpanderValue(int value, int port){
+void sendExpanderValue(bool value, byte port){
   bitWrite(expanderValue, port, value);
   Wire.beginTransmission(0x20);
   Wire.write(expanderValue);
