@@ -13,14 +13,17 @@
 
 BME280 bme280;
 ESP8266WebServer server(80);
+DynamicJsonBuffer jsonBuffer;
+
 String json;
-const char* postHost;
 int portHost;
+const char* postHost;
+
+byte oldValue = 255;
 byte expanderValue = 255;
 byte addressUpdated = 0;
 int id;
 int count;
-DynamicJsonBuffer jsonBuffer;
 
 void setup()
 {
@@ -167,10 +170,10 @@ void loop()
     {
       int result = Wire.read();
       for(int a=0;a<MAX_GPIO;a++){
-        bool preValue = bitRead(expanderValue, a);
+        bool preValue = bitRead(oldValue, a);
         bool currentValue = bitRead(result, a);
         if(preValue != currentValue){
-          bitWrite(expanderValue, a, currentValue);
+          bitWrite(oldValue, a, currentValue);
           bitWrite(addressUpdated, a, 1);
           changed = true;
         }
@@ -202,7 +205,7 @@ void sendUpdate(){
       if(bitRead(addressUpdated, a)){
         JsonObject& gpioObject = jsonBuffer.createObject();
         gpioObject["PIN"] = 1 + a;
-        gpioObject["VALUE"] = bitRead(expanderValue, a);
+        gpioObject["VALUE"] = bitRead(oldValue, a);
         gpioArray.add(gpioObject);
         bitWrite(addressUpdated, a, 0);
       }
