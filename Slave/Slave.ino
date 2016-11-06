@@ -9,6 +9,7 @@
 
 #define MAX_GPIO 8
 #define STATUS_PORT 10
+#define EXPANDER_PORT 0x20
 
 BME280 bme280;
 ESP8266WebServer server(80);
@@ -40,7 +41,7 @@ void setup()
   Wire.begin(5, 4);
 
   //Clear the Expander of any latched ports
-  Wire.beginTransmission(0x20);
+  Wire.beginTransmission(EXPANDER_PORT);
   Wire.write(0xFF);
   Wire.endTransmission(); 
 
@@ -161,7 +162,7 @@ void loop()
   bool changed = false;
 
   if(count == 10){
-    Wire.requestFrom(0x20,1); 
+    Wire.requestFrom(EXPANDER_PORT,1); 
     if(Wire.available())
     {
       int result = Wire.read();
@@ -180,12 +181,50 @@ void loop()
 
   //Update host
   if(changed){
-    Serial.println("Updating");
     sendUpdate();
   }
   else{
-    sendUpdate();
     delay(100); 
+  }
+}
+
+void sendUpdate(){
+  WiFiClient client;
+  JsonObject& root = jsonBuffer.parseObject(json); 
+  const char* host = root["HOST"];
+  const char* url = root["URL"];
+  const int port = root["PORT"];
+  if (client.connect(host, port)) {
+    JsonObject& response = jsonBuffer.createObject();
+    response["ID"] = id;
+    JsonArray& gpioArray = response.createNestedArray("GPIO");
+    for(int a=0;a<MAX_GPIO;a++){
+      if(bitRead(addressUpdated, a)){
+        JsonObject& gpioObject = jsonBuffer.createObject();
+        gpioObject["PIN"] = 1 + a;
+        gpioObject["VALUE"] = bitRead(expanderValue, a);
+        gpioArray.add(gpioObject);
+        bitWrite(addressUpdated, a, 0);
+      }
+    }
+
+    //POST Headers
+    String hostParam = "Host: ";
+    String contentType = "POST ";
+    String httpType = " HTTP/1.1";
+    client.println(contentType + String(url) + httpType);
+    client.println(hostParam + String(host));
+    client.println("User-Agent: Arduino/1.0");
+    client.println("Cache-Control: no-cache");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.print("Content-Length: ");
+    client.println(response.measureLength());
+    client.println();
+    response.printTo(client);
+  }
+  else{
+    Serial.println("Failed to Connect");
   }
 }
 
@@ -227,60 +266,6 @@ void getBME280(){
   server.send(200, "application/json", responseString);
 }
 
-void sendUpdate(){
-  WiFiClient client;
-  JsonObject& root = jsonBuffer.parseObject(json); 
-  const char* host = root["HOST"];
-  const char* url = root["URL"];
-  const int port = root["PORT"];
-  if (client.connect(host, port)) {
-    JsonObject& response = jsonBuffer.createObject();
-    response["ID"] = id;
-    JsonArray& gpioArray = response.createNestedArray("GPIO");
-    for(int a=0;a<MAX_GPIO;a++){
-      JsonObject& gpioObject = jsonBuffer.createObject();
-  
-      for(int a=0;a<MAX_GPIO;a++){
-        if(bitRead(addressUpdated, a)){
-          gpioObject["PIN"] = a + 1;
-          gpioObject["VALUE"] = bitRead(expanderValue, a);
-          gpioArray.add(gpioObject);
-
-          bitWrite(addressUpdated, a, 0);
-        }
-      }
-    }
-
-    //POST Headers
-    String hostParam = "Host: ";
-    String contentType = "POST ";
-    String httpType = " HTTP/1.1";
-    client.println(contentType + String(url) + httpType);
-    client.println(hostParam + String(host));
-    client.println("User-Agent: Arduino/1.0");
-    client.println("Cache-Control: no-cache");
-    client.println("Content-Type: application/json");
-    client.println("Connection: close");
-    client.print("Content-Length: ");
-    response.printTo(Serial);
-    client.println(response.measureLength());
-    client.println();
-    //Print JSON
-    response.printTo(client);
-    while (client.connected())
-    {
-      if ( client.available() )
-      {
-        char str=client.read();
-        Serial.print(str);
-      }
-    }
-  }
-  else{
-    Serial.println("Failed to Connect");
-  }
-}
-
 String ipToString(IPAddress ip){
   String temp="";
   for (int i=0; i<4; i++)
@@ -297,7 +282,7 @@ void debug(int ms){
 
 void sendExpanderValue(bool value, byte port){
   bitWrite(expanderValue, port, value);
-  Wire.beginTransmission(0x20);
+  Wire.beginTransmission(EXPANDER_PORT);
   Wire.write(expanderValue);
   Wire.endTransmission(); 
 }
