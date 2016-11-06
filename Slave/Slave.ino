@@ -19,6 +19,7 @@ byte expanderValue = 255;
 byte addressUpdated = 0;
 int id;
 int count;
+DynamicJsonBuffer jsonBuffer;
 
 void setup()
 {
@@ -32,9 +33,6 @@ void setup()
 
   pinMode(STATUS_PORT, OUTPUT);
   digitalWrite(STATUS_PORT, HIGH);
-
-  //Analog Input - NodeMCU 0-3.3v
-  pinMode(A0, INPUT);
   
   //Setup expansion port
   //GPIO 5 - SDA
@@ -79,8 +77,11 @@ void setup()
   }
   
   //Read Settings from File
-  DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
+
+  //Identity
+  const char* identity = root["IDENTITY"];
+  id = root["ID"];
 
   //Connect to WiFi
   JsonObject& wifi = root["WIFI"];
@@ -91,6 +92,7 @@ void setup()
   WiFi.persistent(false);
   WiFi.mode(WIFI_OFF); 
   WiFi.mode(WIFI_STA);
+  WiFi.hostname(identity);
   WiFi.begin(ssid, password);
   
   while (WiFi.status() != WL_CONNECTED) {
@@ -98,8 +100,6 @@ void setup()
   }
 
   //Device ID and identity
-  const char* identity = root["IDENTITY"];
-  id = root["ID"];
   //Update the docs to include our IP address and ID
   apiDocs.replace("{{host}}", ipToString(WiFi.localIP()));
   apiDocs.replace("{{friendlyName}}", identity);
@@ -161,13 +161,6 @@ void loop()
   bool changed = false;
 
   if(count == 10){
-    int value = analogRead(A0);
-    if(value < 320){
-      sendExpanderValue(0, 0);
-    }
-    else{
-      sendExpanderValue(1, 0);
-    }
     Wire.requestFrom(0x20,1); 
     if(Wire.available())
     {
@@ -191,12 +184,12 @@ void loop()
     sendUpdate();
   }
   else{
+    sendUpdate();
     delay(100); 
   }
 }
 
 void updateGPIO(){
-    DynamicJsonBuffer jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(server.arg("plain"));
     for(int a=0;a<MAX_GPIO;a++){
         int pin = root["GPIO"][a]["PIN"];
@@ -209,7 +202,6 @@ void updateGPIO(){
 }
 
 void getGPIO(){
-  DynamicJsonBuffer jsonBuffer;
   JsonObject& response = jsonBuffer.createObject();
   response["ID"] = id;
   JsonArray& nestedArray = response.createNestedArray("GPIO");
@@ -224,7 +216,6 @@ void getGPIO(){
 }
 
 void getBME280(){
-  DynamicJsonBuffer jsonBuffer;
   JsonObject& response = jsonBuffer.createObject();
   response["ID"] = id;
   response["CELCIUS"] = bme280.readTempC();
@@ -238,13 +229,11 @@ void getBME280(){
 
 void sendUpdate(){
   WiFiClient client;
-  DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
   const char* host = root["HOST"];
   const char* url = root["URL"];
   const int port = root["PORT"];
   if (client.connect(host, port)) {
-    DynamicJsonBuffer jsonBuffer;
     JsonObject& response = jsonBuffer.createObject();
     response["ID"] = id;
     JsonArray& gpioArray = response.createNestedArray("GPIO");
@@ -262,15 +251,30 @@ void sendUpdate(){
       }
     }
 
-    client.println("POST /api/values/post HTTP/1.1");
-    client.println("Host: hostbin.org");
+    //POST Headers
+    String hostParam = "Host: ";
+    String contentType = "POST ";
+    String httpType = " HTTP/1.1";
+    client.println(contentType + String(url) + httpType);
+    client.println(hostParam + String(host));
+    client.println("User-Agent: Arduino/1.0");
     client.println("Cache-Control: no-cache");
     client.println("Content-Type: application/json");
     client.println("Connection: close");
     client.print("Content-Length: ");
+    response.printTo(Serial);
     client.println(response.measureLength());
     client.println();
+    //Print JSON
     response.printTo(client);
+    while (client.connected())
+    {
+      if ( client.available() )
+      {
+        char str=client.read();
+        Serial.print(str);
+      }
+    }
   }
   else{
     Serial.println("Failed to Connect");
