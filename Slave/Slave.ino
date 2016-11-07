@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
+#include <MQTTClient.h>
 #include <SparkFunBME280.h>
 #include <ESP8266WebServer.h>
 
@@ -13,17 +14,18 @@
 
 BME280 bme280;
 ESP8266WebServer server(80);
-DynamicJsonBuffer jsonBuffer;
+WiFiClient mqttpipe;
+MQTTClient mqtt;
 
 String json;
-int portHost;
-const char* postHost;
 
 byte oldValue = 255;
 byte expanderValue = 255;
 byte addressUpdated = 0;
 int id;
 int count;
+bool postUpdate;
+bool publishToMQTT;
 
 void setup()
 {
@@ -81,16 +83,16 @@ void setup()
   }
   
   //Read Settings from File
+  DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
 
   //Identity
-  const char* identity = root["IDENTITY"];
-  id = root["ID"];
+  const char* identity = root["DEVICE"]["IDENTITY"];
+  id = root["DEVICE"]["ID"];
 
   //Connect to WiFi
-  JsonObject& wifi = root["WIFI"];
-  const char* ssid = wifi["SSID"];
-  const char* password = wifi["PASSWORD"];
+  const char* ssid = root["WIFI"]["SSID"];
+  const char* password = root["WIFI"]["PASSWORD"];
 
   //https://github.com/esp8266/Arduino/issues/2186
   WiFi.persistent(false);
@@ -150,6 +152,17 @@ void setup()
   
   delay(10);
   bme280.begin();
+
+  //Check if we should connect to MQTT broker
+  bool connectToMQTT = root["MQTT"]["ENABLED"];
+  if(connectToMQTT){
+      const char* broker = root["MQTT"]["BROKER"];
+      int port = root["MQTT"]["PORT"];
+      mqtt.begin("test.mosca.io", 1883, mqttpipe);
+      publishToMQTT = true;
+  }
+  //Check if we should post an update
+  postUpdate = root["REST"]["ENABLED"];
 }
 
 void loop()
@@ -158,9 +171,17 @@ void loop()
   while (WiFi.status() != WL_CONNECTED) {
     debug(50);
   }
-  //Handle a client
-  server.handleClient();
 
+  mqtt.loop();
+  delay(10);
+
+  if(!mqtt.connected()) {
+    connectMQTT();
+  }
+  
+  //Handle a web client
+  server.handleClient();
+  
   count++;
   bool changed = false;
 
@@ -183,34 +204,58 @@ void loop()
   }
 
   //Update host
-  if(changed){
-    sendUpdate();
+  if(changed){ 
+    //Create my response
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& response = jsonBuffer.createObject();
+    createUpdateResponse(response);
+    char responseBuffer[response.measureLength()+1];
+    response.printTo(responseBuffer, response.measureLength()+1);
+    
+    if(publishToMQTT){
+      //Get my topic
+      DynamicJsonBuffer jsonBuffer;
+      JsonObject& root = jsonBuffer.parseObject(json); 
+      const char* outTopic = root["MQTT"]["TOPICOUT"];
+      
+      mqtt.publish(outTopic, responseBuffer);
+    }
+    if(postUpdate){
+      sendUpdate(responseBuffer, response.measureLength()+1);
+    }
   }
   else{
     delay(100); 
   }
 }
 
-void sendUpdate(){
-  WiFiClient client;
+void connectMQTT() {
+  while (!mqtt.connect(String(id).c_str())) {
+    Serial.println("MQTT connection failed, retrying...");
+    //Retry in 5 seconds
+    delay(5000);
+  }
+  
+  DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
-  const char* host = root["HOST"];
-  const char* url = root["URL"];
-  const int port = root["PORT"];
-  if (client.connect(host, port)) {
-    JsonObject& response = jsonBuffer.createObject();
-    response["ID"] = id;
-    JsonArray& gpioArray = response.createNestedArray("GPIO");
-    for(int a=0;a<MAX_GPIO;a++){
-      if(bitRead(addressUpdated, a)){
-        JsonObject& gpioObject = jsonBuffer.createObject();
-        gpioObject["PIN"] = 1 + a;
-        gpioObject["VALUE"] = bitRead(oldValue, a);
-        gpioArray.add(gpioObject);
-        bitWrite(addressUpdated, a, 0);
-      }
-    }
+  const char* inTopic = root["MQTT"]["TOPICIN"];
+  mqtt.subscribe(inTopic);
+}
 
+void messageReceived(String topic, String payload, char * bytes, unsigned int length) {
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(payload);
+  updateGPIOPins(root);
+}
+
+void sendUpdate(char response[], int responseLength){
+  WiFiClient client;
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(json); 
+  const char* host = root["REST"]["HOST"];
+  const char* url = root["REST"]["URL"];
+  const int port = root["REST"]["PORT"];
+  if (client.connect(host, port)) {
     //POST Headers
     String hostParam = "Host: ";
     String contentType = "POST ";
@@ -222,28 +267,49 @@ void sendUpdate(){
     client.println("Content-Type: application/json");
     client.println("Connection: close");
     client.print("Content-Length: ");
-    client.println(response.measureLength());
+    client.println(responseLength);
     client.println();
-    response.printTo(client);
+    client.println(response);
   }
   else{
     Serial.println("Failed to Connect");
   }
 }
 
-void updateGPIO(){
-    JsonObject& root = jsonBuffer.parseObject(server.arg("plain"));
+void createUpdateResponse(JsonObject& response){
+    DynamicJsonBuffer jsonBuffer;
+    response["ID"] = id;
+    JsonArray& gpioArray = response.createNestedArray("GPIO");
     for(int a=0;a<MAX_GPIO;a++){
-        int pin = root["GPIO"][a]["PIN"];
-        int pinValue = root["GPIO"][a]["VALUE"];
-        if(pin != 0){
-           sendExpanderValue(!pinValue, (pin-1));
-        }
+      if(bitRead(addressUpdated, a)){
+        JsonObject& gpioObject = jsonBuffer.createObject();
+        gpioObject["PIN"] = 1 + a;
+        gpioObject["VALUE"] = bitRead(oldValue, a);
+        gpioArray.add(gpioObject);
+        bitWrite(addressUpdated, a, 0);
+      }
     }
+}
+
+void updateGPIO(){
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& root = jsonBuffer.parseObject(server.arg("plain"));
+    updateGPIOPins(root);
     getGPIO();
 }
 
+void updateGPIOPins(JsonObject& root){
+    for(int a=0;a<MAX_GPIO;a++){
+      int pin = root["GPIO"][a]["PIN"];
+      int pinValue = root["GPIO"][a]["VALUE"];
+      if(pin != 0){
+         sendExpanderValue(!pinValue, (pin-1));
+      }
+  }
+}
+
 void getGPIO(){
+  DynamicJsonBuffer jsonBuffer;
   JsonObject& response = jsonBuffer.createObject();
   response["ID"] = id;
   JsonArray& nestedArray = response.createNestedArray("GPIO");
@@ -258,6 +324,7 @@ void getGPIO(){
 }
 
 void getBME280(){
+  DynamicJsonBuffer jsonBuffer;
   JsonObject& response = jsonBuffer.createObject();
   response["ID"] = id;
   response["CELCIUS"] = bme280.readTempC();
