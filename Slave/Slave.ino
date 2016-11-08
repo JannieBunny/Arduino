@@ -158,7 +158,8 @@ void setup()
   if(connectToMQTT){
       const char* broker = root["MQTT"]["BROKER"];
       int port = root["MQTT"]["PORT"];
-      mqtt.begin("test.mosca.io", 1883, mqttpipe);
+      mqtt.begin(broker, port, mqttpipe);
+      connectMQTT();
       publishToMQTT = true;
   }
   //Check if we should post an update
@@ -172,11 +173,12 @@ void loop()
     debug(50);
   }
 
-  mqtt.loop();
-  delay(10);
-
-  if(!mqtt.connected()) {
-    connectMQTT();
+  if(publishToMQTT){
+    mqtt.loop();
+    delay(10);
+    if(!mqtt.connected()) {
+      connectMQTT();
+    }
   }
   
   //Handle a web client
@@ -205,24 +207,18 @@ void loop()
 
   //Update host
   if(changed){ 
-    //Create my response
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& response = jsonBuffer.createObject();
-    createUpdateResponse(response);
-    char responseBuffer[response.measureLength()+1];
-    response.printTo(responseBuffer, response.measureLength()+1);
-    
+    String response = createUpdateResponse();
     if(publishToMQTT){
       //Get my topic
       DynamicJsonBuffer jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject(json); 
       const char* outTopic = root["MQTT"]["TOPICOUT"];
-      
-      mqtt.publish(outTopic, responseBuffer);
+      mqtt.publish(outTopic, response);
     }
     if(postUpdate){
-      sendUpdate(responseBuffer, response.measureLength()+1);
+      sendUpdate(response);
     }
+    flagGPIOUpdated();
   }
   else{
     delay(100); 
@@ -230,11 +226,14 @@ void loop()
 }
 
 void connectMQTT() {
+  Serial.println("Connecting to MQTT Broker");
   while (!mqtt.connect(String(id).c_str())) {
     Serial.println("MQTT connection failed, retrying...");
     //Retry in 5 seconds
     delay(5000);
   }
+
+  Serial.println("Connected to MQTT Broker");
   
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
@@ -248,13 +247,14 @@ void messageReceived(String topic, String payload, char * bytes, unsigned int le
   updateGPIOPins(root);
 }
 
-void sendUpdate(char response[], int responseLength){
+void sendUpdate(String response){
   WiFiClient client;
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
   const char* host = root["REST"]["HOST"];
   const char* url = root["REST"]["URL"];
   const int port = root["REST"]["PORT"];
+  Serial.println("Connecting to POST server");
   if (client.connect(host, port)) {
     //POST Headers
     String hostParam = "Host: ";
@@ -267,17 +267,19 @@ void sendUpdate(char response[], int responseLength){
     client.println("Content-Type: application/json");
     client.println("Connection: close");
     client.print("Content-Length: ");
-    client.println(responseLength);
+    client.println(response.length());
     client.println();
     client.println(response);
+    Serial.println("Response sent to POST server");
   }
   else{
-    Serial.println("Failed to Connect");
+    Serial.println("Failed to Connect to POST server");
   }
 }
 
-void createUpdateResponse(JsonObject& response){
+String createUpdateResponse(){
     DynamicJsonBuffer jsonBuffer;
+    JsonObject& response = jsonBuffer.createObject();
     response["ID"] = id;
     JsonArray& gpioArray = response.createNestedArray("GPIO");
     for(int a=0;a<MAX_GPIO;a++){
@@ -286,9 +288,18 @@ void createUpdateResponse(JsonObject& response){
         gpioObject["PIN"] = 1 + a;
         gpioObject["VALUE"] = bitRead(oldValue, a);
         gpioArray.add(gpioObject);
-        bitWrite(addressUpdated, a, 0);
       }
     }
+    int responseBufferSize = response.measureLength()+1;
+    char responseBuffer[responseBufferSize];
+    response.printTo(responseBuffer, responseBufferSize);
+    return String(responseBuffer);
+}
+
+void flagGPIOUpdated(){
+  for(int a=0;a<MAX_GPIO;a++){
+      bitWrite(addressUpdated, a, 0);  
+  }
 }
 
 void updateGPIO(){
