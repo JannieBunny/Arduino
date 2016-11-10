@@ -7,11 +7,13 @@
 #include <MQTTClient.h>
 #include <SparkFunBME280.h>
 #include <ESP8266WebServer.h>
+#include <SDSettings.h>
 
 #define MAX_GPIO 8
 #define STATUS_PORT 10
 #define EXPANDER_PORT 0x20
 
+SDSettings settings;
 BME280 bme280;
 ESP8266WebServer server(80);
 WiFiClient mqttpipe;
@@ -58,29 +60,13 @@ void setup()
   }
 
   //Get API docs
-  File docs = SD.open("api.txt", FILE_READ);
-  if(docs){
-    //Increase timeout due to file size
-    docs.setTimeout(4000);
-    apiDocs = docs.readString();
-    docs.close();
-  }
-
+  apiDocs = settings.ReadIntoString("api.txt");
+ 
   //Get homepage
-  File homePage = SD.open("home.txt", FILE_READ);
-  if(homePage){
-    //Increase timeout due to file size
-    homePage.setTimeout(4000);
-    homeStatus = homePage.readString();
-    homePage.close();
-  }
+  homeStatus = settings.ReadIntoString("home.txt");
   
   //Find Settings file from SD Card
-  File myIdentity = SD.open("settings.txt");
-  if(myIdentity){
-    json = myIdentity.readString();
-    myIdentity.close();
-  }
+  json = settings.ReadIntoString("settings.txt");
   
   //Read Settings from File
   DynamicJsonBuffer jsonBuffer;
