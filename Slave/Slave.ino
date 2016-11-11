@@ -8,6 +8,7 @@
 #include <SparkFunBME280.h>
 #include <ESP8266WebServer.h>
 #include <SDSettings.h>
+#include <WebServer.h>
 
 #define MAX_GPIO 8
 #define STATUS_PORT 10
@@ -18,8 +19,11 @@ BME280 bme280;
 ESP8266WebServer server(80);
 WiFiClient mqttpipe;
 MQTTClient mqtt;
-
+WebServer webserver;
+  
 String json;
+String homePage;
+String apiDocs;
 
 byte oldValue = 255;
 byte expanderValue = 255;
@@ -30,11 +34,7 @@ bool postUpdate;
 bool publishToMQTT;
 
 void setup()
-{
-  //Vars
-  String apiDocs;
-  String homeStatus;
-  
+{ 
   //Debug
   Serial.begin(9600);
   delay(10);
@@ -63,7 +63,7 @@ void setup()
   apiDocs = settings.ReadIntoString("api.txt");
  
   //Get homepage
-  homeStatus = settings.ReadIntoString("home.txt");
+  homePage = settings.ReadIntoString("home.txt");
   
   //Find Settings file from SD Card
   json = settings.ReadIntoString("settings.txt");
@@ -93,35 +93,14 @@ void setup()
 
   //Device ID and identity
   //Update the docs to include our IP address and ID
-  apiDocs.replace("{{host}}", ipToString(WiFi.localIP()));
-  apiDocs.replace("{{friendlyName}}", identity);
 
-  //Update Home Page Controls
-  homeStatus.replace("{{friendlyName}}", identity);
+  webserver.DeviceIdentity = String(identity);
+  webserver.Ip = ipToString(WiFi.localIP());
+  webserver.GPIOCount = MAX_GPIO;
+  webserver.DeviceId = id;
 
-  //Documentation
-  server.on("/", [homeStatus](){
-    String temp = homeStatus.substring(0); 
-    temp.replace("{{apiLink}}", ipToString(WiFi.localIP()));
-    temp.replace("{{celcius}}", String(bme280.readTempC()));
-    temp.replace("{{pressure}}", String(bme280.readFloatPressure()));
-    temp.replace("{{altitude}}", String(bme280.readFloatAltitudeMeters()));
-    temp.replace("{{humidity}}", String(bme280.readFloatHumidity()));
-    temp.replace("{{gpio1}}", String(!bitRead(expanderValue, 0)));
-    temp.replace("{{gpio2}}", String(!bitRead(expanderValue, 1)));
-    temp.replace("{{gpio3}}", String(!bitRead(expanderValue, 2)));
-    temp.replace("{{gpio4}}", String(!bitRead(expanderValue, 3)));
-    temp.replace("{{gpio5}}", String(!bitRead(expanderValue, 4)));
-    temp.replace("{{gpio6}}", String(!bitRead(expanderValue, 5)));
-    temp.replace("{{gpio7}}", String(!bitRead(expanderValue, 6)));
-    temp.replace("{{gpio8}}", String(!bitRead(expanderValue, 7)));
-    server.send(200, "text/html", temp);
-  }); 
-
-  server.on("/api", [apiDocs](){
-    server.send(200, "text/html", apiDocs);
-  }); 
-  
+  server.on("/", HTTP_GET, getHome);
+  server.on("/api", HTTP_GET, getAPIDocs);
   server.on("/api/GPIO/update", HTTP_PUT, updateGPIO);
   server.on("/api/GPIO/get", HTTP_GET, getGPIO);
   server.on("/api/BME280/get", HTTP_GET, getBME280);
@@ -306,31 +285,30 @@ void updateGPIOPins(JsonObject& root){
 }
 
 void getGPIO(){
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& response = jsonBuffer.createObject();
-  response["ID"] = id;
-  JsonArray& nestedArray = response.createNestedArray("GPIO");
-  for(int a=0;a<MAX_GPIO;a++){
-      JsonObject& nestedObject = nestedArray.createNestedObject();
-      nestedObject["PIN"] = a + 1;
-      nestedObject["VALUE"] = (int)!bitRead(expanderValue, a);
-  }
-  char responseString[response.measureLength()+1];
-  response.printTo(responseString, response.measureLength()+1);
-  server.send(200, "application/json", responseString);
+  String response = webserver.GetGPIOResponse(expanderValue);
+  server.send(200, "application/json", response);
 }
 
 void getBME280(){
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& response = jsonBuffer.createObject();
-  response["ID"] = id;
-  response["CELCIUS"] = bme280.readTempC();
-  response["PRESSURE"] = bme280.readFloatPressure();
-  response["ALTITUDE"] = bme280.readFloatAltitudeMeters();
-  response["HUMIDITY"] = bme280.readFloatHumidity();
-  char responseString[response.measureLength()+1];
-  response.printTo(responseString, response.measureLength()+1);
-  server.send(200, "application/json", responseString);
+  String response = webserver.GetBME280Response(bme280.readTempC(), 
+                              bme280.readFloatPressure(),
+                              bme280.readFloatAltitudeMeters(), 
+                              bme280.readFloatHumidity());
+  server.send(200, "application/json", response);
+}
+
+void getHome(){
+  String page = webserver.GetHomePageResponse(homePage, expanderValue,
+                                            bme280.readTempC(), 
+                                            bme280.readFloatPressure(),
+                                            bme280.readFloatAltitudeMeters(), 
+                                            bme280.readFloatHumidity());
+  server.send(200, "text/html", page);
+}
+
+void getAPIDocs(){
+  apiDocs = webserver.GetAPIPageResponse(apiDocs);
+  server.send(200, "text/html", apiDocs);
 }
 
 String ipToString(IPAddress ip){
