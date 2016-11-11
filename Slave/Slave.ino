@@ -9,10 +9,11 @@
 #include <ESP8266WebServer.h>
 #include <SDSettings.h>
 #include <WebServer.h>
+#include <ExpanderPort.h>
 
 #define MAX_GPIO 8
 #define STATUS_PORT 10
-#define EXPANDER_PORT 0x20
+#define EXPANDER_ADRRESS 0x20
 
 SDSettings settings;
 BME280 bme280;
@@ -20,14 +21,12 @@ ESP8266WebServer server(80);
 WiFiClient mqttpipe;
 MQTTClient mqtt;
 WebServer webserver;
+ExpanderPort expanderPort;
   
 String json;
 String homePage;
 String apiDocs;
 
-byte oldValue = 255;
-byte expanderValue = 255;
-byte addressUpdated = 0;
 int id;
 int count;
 bool postUpdate;
@@ -48,14 +47,14 @@ void setup()
   Wire.begin(5, 4);
 
   //Clear the Expander of any latched ports
-  Wire.beginTransmission(EXPANDER_PORT);
-  Wire.write(0xFF);
-  Wire.endTransmission(); 
+  expanderPort.Address = EXPANDER_ADRRESS;
+  expanderPort.GPIOCount_Expander = MAX_GPIO;
+  expanderPort.Clear();
 
   //Setup SD Card with select pin on 16
   if (!SD.begin(16)) {
     while(true){
-      debug(200);
+      flashStatus(200);
     }
   }
 
@@ -88,7 +87,7 @@ void setup()
   WiFi.begin(ssid, password);
   
   while (WiFi.status() != WL_CONNECTED) {
-    debug(50);
+    flashStatus(50);
   }
 
   //Device ID and identity
@@ -135,7 +134,7 @@ void loop()
 {
   //Reconnect WiFI if it drops
   while (WiFi.status() != WL_CONNECTED) {
-    debug(50);
+    flashStatus(50);
   }
 
   if(publishToMQTT){
@@ -152,26 +151,14 @@ void loop()
   count++;
   bool changed = false;
 
+  //Trigger every one second
   if(count == 10){
-    Wire.requestFrom(EXPANDER_PORT,1); 
-    if(Wire.available())
-    {
-      int result = Wire.read();
-      for(int a=0;a<MAX_GPIO;a++){
-        bool preValue = bitRead(oldValue, a);
-        bool currentValue = bitRead(result, a);
-        if(preValue != currentValue){
-          bitWrite(oldValue, a, currentValue);
-          bitWrite(addressUpdated, a, 1);
-          changed = true;
-        }
-      }
-    }
+    expanderPort.GetStatus();
     count = 0;
   }
 
   //Update host
-  if(changed){ 
+  if(expanderPort.Changed){ 
     String response = createUpdateResponse();
     if(publishToMQTT){
       //Get my topic
@@ -248,10 +235,10 @@ String createUpdateResponse(){
     response["ID"] = id;
     JsonArray& gpioArray = response.createNestedArray("GPIO");
     for(int a=0;a<MAX_GPIO;a++){
-      if(bitRead(addressUpdated, a)){
+      if(bitRead(expanderPort.ChangedPorts, a)){
         JsonObject& gpioObject = jsonBuffer.createObject();
         gpioObject["PIN"] = 1 + a;
-        gpioObject["VALUE"] = bitRead(oldValue, a);
+        gpioObject["VALUE"] = bitRead(expanderPort.LastReading, a);
         gpioArray.add(gpioObject);
       }
     }
@@ -262,9 +249,7 @@ String createUpdateResponse(){
 }
 
 void flagGPIOUpdated(){
-  for(int a=0;a<MAX_GPIO;a++){
-      bitWrite(addressUpdated, a, 0);  
-  }
+    expanderPort.ResetChangeFlag();
 }
 
 void updateGPIO(){
@@ -275,17 +260,22 @@ void updateGPIO(){
 }
 
 void updateGPIOPins(JsonObject& root){
+    byte newStatus = expanderPort.LastReading;
     for(int a=0;a<MAX_GPIO;a++){
       int pin = root["GPIO"][a]["PIN"];
       int pinValue = root["GPIO"][a]["VALUE"];
       if(pin != 0){
-         sendExpanderValue(!pinValue, (pin-1));
+          bitWrite(newStatus, pin-1, pinValue);
       }
-  }
+      expanderPort.SetStatus(newStatus);
+    }
+    
 }
 
+//GET calls
+
 void getGPIO(){
-  String response = webserver.GetGPIOResponse(expanderValue);
+  String response = webserver.GetGPIOResponse(expanderPort.LastReading);
   server.send(200, "application/json", response);
 }
 
@@ -298,7 +288,7 @@ void getBME280(){
 }
 
 void getHome(){
-  String page = webserver.GetHomePageResponse(homePage, expanderValue,
+  String page = webserver.GetHomePageResponse(homePage, expanderPort.LastReading,
                                             bme280.readTempC(), 
                                             bme280.readFloatPressure(),
                                             bme280.readFloatAltitudeMeters(), 
@@ -311,6 +301,7 @@ void getAPIDocs(){
   server.send(200, "text/html", apiDocs);
 }
 
+//Helpers
 String ipToString(IPAddress ip){
   String temp="";
   for (int i=0; i<4; i++)
@@ -318,17 +309,9 @@ String ipToString(IPAddress ip){
   return temp;
 }
 
-void debug(int ms){
+void flashStatus(int ms){
   digitalWrite(STATUS_PORT, HIGH);
   delay(ms);
   digitalWrite(STATUS_PORT, LOW);
   delay(ms);
 }
-
-void sendExpanderValue(bool value, byte port){
-  bitWrite(expanderValue, port, value);
-  Wire.beginTransmission(EXPANDER_PORT);
-  Wire.write(expanderValue);
-  Wire.endTransmission(); 
-}
-
