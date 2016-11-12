@@ -3,16 +3,24 @@
   Created by C Rossouw, November 10, 2016.
 */
 
+#include "SDSettings.h"
 #include "Arduino.h"
 #include "SD.h"
-#include "SDSettings.h"
+#include "SPI.h"
 
-String SDSettings::ReadIntoString(char filename[])
+void SDSettings::Begin(int selectPin, void (*SDstatusFunction)(int)){
+	if(!SD.begin(selectPin)){
+		while(true){
+			(*SDstatusFunction)(250);
+		}
+	}
+}
+
+String SDSettings::ReadIntoString(char filename[], int timeout)
 {
 	File file = SD.open(filename, FILE_READ);
 	if(file){
-		//Increase timeout due to file size
-		file.setTimeout(4000);
+		file.setTimeout(timeout);
 		String content = file.readString();
 		file.close();
 		return content;

@@ -1,26 +1,26 @@
 //ESP8266 - Webserver/client and basic sensors with SD card config
-#include <SD.h>
-#include <SPI.h>
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 #include <MQTTClient.h>
 #include <SparkFunBME280.h>
 #include <ESP8266WebServer.h>
+
+//Custom Libraries
 #include <SDSettings.h>
 #include <WebServer.h>
 #include <ExpanderPort.h>
+#include <MQTTActions.h>
 
 #define MAX_GPIO 8
 #define STATUS_PORT 10
 #define EXPANDER_ADRRESS 0x20
 
-SDSettings settings;
+SDSettings SDconfig;
 BME280 bme280;
 ESP8266WebServer server(80);
-WiFiClient mqttpipe;
-MQTTClient mqtt;
 WebServer webserver;
 ExpanderPort expanderPort;
+MQTTActions mqttBrokerClient;
   
 String json;
 String homePage;
@@ -30,6 +30,9 @@ int id;
 int count;
 bool postUpdate;
 bool publishToMQTT;
+String GPIOUpdateSubscription;
+String GPIOGetSubscription;
+String PublishTopic;
 
 void setup()
 { 
@@ -45,24 +48,18 @@ void setup()
   expanderPort.GPIOCount_Expander = MAX_GPIO;
   expanderPort.Clear();
 
-  //Setup SD Card with select pin on 16
-  if (!SD.begin(16)) {
-    while(true){
-      flashStatus(200);
-    }
-  }
-
+  //Init SD Card
+  SDconfig.Begin(16, flashStatus);
   //Get API docs
-  apiDocs = settings.ReadIntoString("api.txt");
+  apiDocs = SDconfig.ReadIntoString("api.con", 3500);
   //Get homepage
-  homePage = settings.ReadIntoString("home.txt");
-  //Find Settings file from SD Card
-  json = settings.ReadIntoString("settings.txt");
-  
-  //Read Settings from File
+  homePage = SDconfig.ReadIntoString("home.slv", 3500);
+  //Find SDconfig file from SD Card
+  json = SDconfig.ReadIntoString("config.slv", 1000);
+  //Read SDconfig from File
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
-
+  
   //Identity
   const char* identity = root["DEVICE"]["IDENTITY"];
   id = root["DEVICE"]["ID"];
@@ -81,6 +78,7 @@ void setup()
   while (WiFi.status() != WL_CONNECTED) {
     flashStatus(50);
   }
+  
   webserver.Host = String((const char*)root["REST"]["HOST"]);
   webserver.Url = String((const char*)root["REST"]["URL"]);
   webserver.Port = root["REST"]["PORT"];
@@ -109,15 +107,20 @@ void setup()
   delay(10);
   bme280.begin();
 
-  //Check if we should connect to MQTT broker
-  bool connectToMQTT = root["MQTT"]["ENABLED"];
-  if(connectToMQTT){
-      const char* broker = root["MQTT"]["BROKER"];
-      int port = root["MQTT"]["PORT"];
-      mqtt.begin(broker, port, mqttpipe);
-      connectMQTT();
-      publishToMQTT = true;
+  publishToMQTT = root["MQTT"]["ENABLED"];
+  if(publishToMQTT){
+    delay(10);
+    PublishTopic = String((const char*)root["MQTT"]["PUBLISH"]);
+    GPIOUpdateSubscription = String((const char*)root["MQTT"]["UPDATE"]);
+    GPIOGetSubscription = String((const char*)root["MQTT"]["GET"]);
+    mqttBrokerClient.ClientName = String(id);
+    mqttBrokerClient.Broker = String((const char*)root["MQTT"]["BROKER"]);
+    mqttBrokerClient.BrokerPort = root["MQTT"]["PORT"];
+    mqttBrokerClient.Begin();
+    mqttBrokerClient.Connect(flashStatus);
+    mqttBrokerClient.Subscribe(GPIOUpdateSubscription);
   }
+  
   //Check if we should post an update
   postUpdate = root["REST"]["ENABLED"];
 }
@@ -130,11 +133,12 @@ void loop()
   }
 
   if(publishToMQTT){
-    mqtt.loop();
     delay(10);
-    if(!mqtt.connected()) {
-      connectMQTT();
+    if(!mqttBrokerClient.Connected()){
+      mqttBrokerClient.Connect(flashStatus);
+      mqttBrokerClient.Subscribe(GPIOUpdateSubscription);
     }
+    mqttBrokerClient.Loop();
   }
   
   //Handle a web client
@@ -153,11 +157,7 @@ void loop()
   if(expanderPort.Changed){ 
     String response = createUpdateResponse();
     if(publishToMQTT){
-      //Get my topic
-      DynamicJsonBuffer jsonBuffer;
-      JsonObject& root = jsonBuffer.parseObject(json); 
-      const char* outTopic = root["MQTT"]["TOPICOUT"];
-      mqtt.publish(outTopic, response);
+      mqttBrokerClient.Publish(PublishTopic, response);
     }
     if(postUpdate){
       webserver.SendGPIOUpdate(response);
@@ -167,22 +167,6 @@ void loop()
   else{
     delay(100); 
   }
-}
-
-void connectMQTT() {
-  Serial.println("Connecting to MQTT Broker");
-  while (!mqtt.connect(String(id).c_str())) {
-    Serial.println("MQTT connection failed, retrying...");
-    //Retry in 5 seconds
-    delay(5000);
-  }
-
-  Serial.println("Connected to MQTT Broker");
-  
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json); 
-  const char* inTopic = root["MQTT"]["TOPICIN"];
-  mqtt.subscribe(inTopic);
 }
 
 void messageReceived(String topic, String payload, char * bytes, unsigned int length) {
@@ -235,7 +219,6 @@ void updateGPIOPins(JsonObject& root){
 }
 
 //GET calls
-
 void getGPIO(){
   String response = webserver.GetGPIOResponse(expanderPort.LastReading);
   server.send(200, "application/json", response);

@@ -5,13 +5,15 @@
 #ifndef SDSettings_h
 #define SDSettings_h
 
-#include "SD.h"
 #include "Arduino.h"
+#include "SD.h"
+#include "SPI.h"
 
 class SDSettings
 {
   public:
-	String ReadIntoString(char filename[]);
+	void Begin(int selectPin, void (*SDstatusFunction)(int));
+	String ReadIntoString(char filename[], int timeout);
 };
 
 #endif
