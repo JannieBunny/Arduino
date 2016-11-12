@@ -11,6 +11,7 @@
 class ExpanderPort
 {
   public:
+	ExpanderPort();
 	int GPIOCount_Expander;
 	bool Changed;
 	byte ChangedPorts;

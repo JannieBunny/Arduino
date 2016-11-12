@@ -14,6 +14,12 @@ byte ChangedPorts;
 byte Address;
 byte LastReading;
 
+ExpanderPort::ExpanderPort(){
+  //GPIO 5 - SDA
+  //GPIO 4 - CLK
+  Wire.begin(5, 4);
+}
+
 byte ExpanderPort::GetStatus(){ 
 	Wire.requestFrom(Address, (byte)1);
 	if(Wire.available())

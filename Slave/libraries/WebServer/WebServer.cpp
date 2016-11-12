@@ -6,12 +6,17 @@
 #include "WebServer.h"
 #include "Arduino.h"
 #include "ArduinoJson.h"
+#include "ESP8266WebServer.h"
 
 String Ip;
 String DeviceIdentity;
 
 int DeviceId;
 int GPIOCount;
+
+String Host;
+String Url;
+int Port;
 
 String WebServer::GetHomePageResponse(String page, byte expanderPort, 
 										float celcius, float pressure, 
@@ -62,4 +67,29 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 	char responseString[response.measureLength()+1];
 	response.printTo(responseString, response.measureLength()+1);
 	return String(responseString);
+ }
+ 
+ void WebServer::SendGPIOUpdate(String response){
+	WiFiClient client;
+	Serial.println("Connecting to POST server");
+	if (client.connect(Host.c_str(), Port)) {
+		//POST Headers
+		String hostParam = "Host: ";
+		String contentType = "POST ";
+		String httpType = " HTTP/1.1";
+		client.println(contentType + Url + httpType);
+		client.println(hostParam + Host);
+		client.println("User-Agent: Arduino/1.0");
+		client.println("Cache-Control: no-cache");
+		client.println("Content-Type: application/json");
+		client.println("Connection: close");
+		client.print("Content-Length: ");
+		client.println(response.length());
+		client.println();
+		client.println(response);
+		Serial.println("Response sent to POST server");
+	}
+	else{
+		Serial.println("Failed to Connect to POST server");
+	}
  }

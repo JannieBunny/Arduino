@@ -1,7 +1,6 @@
 //ESP8266 - Webserver/client and basic sensors with SD card config
 #include <SD.h>
 #include <SPI.h>
-#include <Wire.h>
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 #include <MQTTClient.h>
@@ -40,11 +39,6 @@ void setup()
 
   pinMode(STATUS_PORT, OUTPUT);
   digitalWrite(STATUS_PORT, HIGH);
-  
-  //Setup expansion port
-  //GPIO 5 - SDA
-  //GPIO 4 - CLK
-  Wire.begin(5, 4);
 
   //Clear the Expander of any latched ports
   expanderPort.Address = EXPANDER_ADRRESS;
@@ -60,10 +54,8 @@ void setup()
 
   //Get API docs
   apiDocs = settings.ReadIntoString("api.txt");
- 
   //Get homepage
   homePage = settings.ReadIntoString("home.txt");
-  
   //Find Settings file from SD Card
   json = settings.ReadIntoString("settings.txt");
   
@@ -89,10 +81,10 @@ void setup()
   while (WiFi.status() != WL_CONNECTED) {
     flashStatus(50);
   }
-
-  //Device ID and identity
-  //Update the docs to include our IP address and ID
-
+  webserver.Host = String((const char*)root["REST"]["HOST"]);
+  webserver.Url = String((const char*)root["REST"]["URL"]);
+  webserver.Port = root["REST"]["PORT"];
+  
   webserver.DeviceIdentity = String(identity);
   webserver.Ip = ipToString(WiFi.localIP());
   webserver.GPIOCount = MAX_GPIO;
@@ -168,7 +160,7 @@ void loop()
       mqtt.publish(outTopic, response);
     }
     if(postUpdate){
-      sendUpdate(response);
+      webserver.SendGPIOUpdate(response);
     }
     flagGPIOUpdated();
   }
@@ -197,36 +189,6 @@ void messageReceived(String topic, String payload, char * bytes, unsigned int le
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(payload);
   updateGPIOPins(root);
-}
-
-void sendUpdate(String response){
-  WiFiClient client;
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json); 
-  const char* host = root["REST"]["HOST"];
-  const char* url = root["REST"]["URL"];
-  const int port = root["REST"]["PORT"];
-  Serial.println("Connecting to POST server");
-  if (client.connect(host, port)) {
-    //POST Headers
-    String hostParam = "Host: ";
-    String contentType = "POST ";
-    String httpType = " HTTP/1.1";
-    client.println(contentType + String(url) + httpType);
-    client.println(hostParam + String(host));
-    client.println("User-Agent: Arduino/1.0");
-    client.println("Cache-Control: no-cache");
-    client.println("Content-Type: application/json");
-    client.println("Connection: close");
-    client.print("Content-Length: ");
-    client.println(response.length());
-    client.println();
-    client.println(response);
-    Serial.println("Response sent to POST server");
-  }
-  else{
-    Serial.println("Failed to Connect to POST server");
-  }
 }
 
 String createUpdateResponse(){

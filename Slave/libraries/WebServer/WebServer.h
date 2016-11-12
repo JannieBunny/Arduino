@@ -7,12 +7,16 @@
 
 #include "Arduino.h"
 #include "ArduinoJson.h"
+#include "ESP8266WebServer.h"
 
 class WebServer
 {
   public:
   	String Ip;
   	String DeviceIdentity;
+	String Host;
+	String Url;
+	int Port;
 	
 	int DeviceId;
 	int GPIOCount;
@@ -27,6 +31,7 @@ class WebServer
 	String GetBME280Response(float celcius, float pressure, 
 							 float altitude, float humidity);
     String GetGPIOResponse(byte expanderPort);
+	void SendGPIOUpdate(String response);
 };
 
 #endif
