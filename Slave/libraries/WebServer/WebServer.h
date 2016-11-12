@@ -8,6 +8,7 @@
 #include "Arduino.h"
 #include "ArduinoJson.h"
 #include "ESP8266WebServer.h"
+#include "base64.h"
 
 class WebServer
 {
@@ -30,9 +31,11 @@ class WebServer
 	String GetAPIPageResponse(String page);
 	String GetBME280Response(float celcius, float pressure, 
 							 float altitude, float humidity);
-    String GetGPIOResponse(byte expanderPort);
-	String CreateUpdateResponse(byte changedPorts, byte lastReading);
-	void SendGPIOUpdate(String response);
+    String GetGPIOResponse(byte expanderPort, String requestType);
+	String CreateUpdateResponse(byte changedPorts, byte lastReading, String requestType);
+	void SendGPIOUpdate(String response, String username, String password);
+  private:
+	base64 encoder;
 };
 
 #endif

@@ -7,6 +7,7 @@
 #include "Arduino.h"
 #include "ArduinoJson.h"
 #include "ESP8266WebServer.h"
+#include "base64.h"
 
 String Ip;
 String DeviceIdentity;
@@ -17,6 +18,8 @@ int GPIOCount;
 String Host;
 String Url;
 int Port;
+
+base64 encoder;
 
 String WebServer::GetHomePageResponse(String page, byte expanderPort, 
 										float celcius, float pressure, 
@@ -54,10 +57,11 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 	return String(responseString);
  }
  
- String WebServer::GetGPIOResponse(byte expanderPort){
+ String WebServer::GetGPIOResponse(byte expanderPort, String requestType){
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& response = jsonBuffer.createObject();
 	response["ID"] = DeviceId;
+	response["TYPE"] = requestType;
 	JsonArray& nestedArray = response.createNestedArray("GPIO");
 	for(int a=0;a<GPIOCount;a++){
 		JsonObject& nestedObject = nestedArray.createNestedObject();
@@ -69,7 +73,7 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 	return String(responseString);
  }
  
- void WebServer::SendGPIOUpdate(String response){
+ void WebServer::SendGPIOUpdate(String response, String username, String password){
 	WiFiClient client;
 	Serial.println("Connecting to POST server");
 	if (client.connect(Host.c_str(), Port)) {
@@ -79,7 +83,11 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 		String httpType = " HTTP/1.1";
 		client.println(contentType + Url + httpType);
 		client.println(hostParam + Host);
-		client.println("User-Agent: Arduino/1.0");
+		client.println("User-Agent: ESP8266/1.0");
+		if(username != "" && password != ""){
+			String auth = encoder.encode(username + String(":") + password);
+			client.println("Authorization: Basic " + auth);	
+		}
 		client.println("Cache-Control: no-cache");
 		client.println("Content-Type: application/json");
 		client.println("Connection: close");
@@ -94,10 +102,11 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 	}
  }
  
- String WebServer::CreateUpdateResponse(byte changedPorts, byte lastReading){
+ String WebServer::CreateUpdateResponse(byte changedPorts, byte lastReading, String requestType){
 	DynamicJsonBuffer jsonBuffer;
     JsonObject& response = jsonBuffer.createObject();
     response["ID"] = DeviceId;
+	response["TYPE"] = requestType;
     JsonArray& gpioArray = response.createNestedArray("GPIO");
     for(int a=0;a<GPIOCount;a++){
       if(bitRead(changedPorts, a)){

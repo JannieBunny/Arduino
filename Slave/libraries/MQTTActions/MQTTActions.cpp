@@ -27,6 +27,13 @@ void MQTTActions::Connect(void (*statusFunction)(int)){
 	}
 }
 
+void MQTTActions::Connect(void (*statusFunction)(int), String username, String password){
+	while(!mqttClient.connected()){
+		mqttClient.connect(ClientName.c_str(), username.c_str(), password.c_str());
+		(*statusFunction)(500);
+	}
+}
+
 void MQTTActions::Loop(){
 	mqttClient.loop();
 }

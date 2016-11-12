@@ -16,6 +16,7 @@ class MQTTActions
 	int BrokerPort;
 	void Begin();
 	void Connect(void (*SDstatusFunction)(int));
+	void Connect(void (*SDstatusFunction)(int), String username, String password);
 	void Loop();
 	void Subscribe(String topic);
 	void Unsubscribe(String topic);

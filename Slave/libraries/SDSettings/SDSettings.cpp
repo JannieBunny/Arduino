@@ -9,10 +9,8 @@
 #include "SPI.h"
 
 void SDSettings::Begin(int selectPin, void (*SDstatusFunction)(int)){
-	if(!SD.begin(selectPin)){
-		while(true){
-			(*SDstatusFunction)(250);
-		}
+	while(!SD.begin(selectPin)){
+		(*SDstatusFunction)(250);
 	}
 }
 

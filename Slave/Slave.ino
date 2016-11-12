@@ -25,6 +25,9 @@ String json;
 String homePage;
 String apiDocs;
 
+const char* MQTTREQUEST = "REQUEST";
+const char* MQTTPOLL = "INTERRUPT";
+
 int id;
 int count;
 bool postUpdate;
@@ -32,6 +35,10 @@ bool publishToMQTT;
 String GPIOUpdateSubscription;
 String GPIOGetSubscription;
 String PublishTopic;
+String MQTTUsername;
+String MQTTPassword;
+String POSTUsername;
+String POSTPassword;
 
 void setup()
 { 
@@ -107,19 +114,25 @@ void setup()
   publishToMQTT = root["MQTT"]["ENABLED"];
   if(publishToMQTT){
     delay(10);
-    PublishTopic = String((const char*)root["MQTT"]["PUBLISH"]);
-    GPIOUpdateSubscription = String((const char*)root["MQTT"]["UPDATE"]);
-    GPIOGetSubscription = String((const char*)root["MQTT"]["GET"]);
+    JsonObject& mqttSettings = root["MQTT"];
+    MQTTUsername = String((const char*)mqttSettings["USERNAME"]);
+    MQTTPassword = String((const char*)mqttSettings["PASSWORD"]);
+    PublishTopic = String((const char*)mqttSettings["PUBLISH"]);
+    GPIOUpdateSubscription = String((const char*)mqttSettings["UPDATE"]);
+    GPIOGetSubscription = String((const char*)mqttSettings["GET"]);
     mqttBrokerClient.ClientName = String(id);
-    mqttBrokerClient.Broker = String((const char*)root["MQTT"]["BROKER"]);
-    mqttBrokerClient.BrokerPort = root["MQTT"]["PORT"];
+    mqttBrokerClient.Broker = String((const char*)mqttSettings["BROKER"]);
+    mqttBrokerClient.BrokerPort = mqttSettings["PORT"];
     mqttBrokerClient.Begin();
-    mqttBrokerClient.Connect(flashStatus);
+    connectMQTT(MQTTUsername, MQTTPassword);
     mqttBrokerClient.Subscribe(GPIOUpdateSubscription);
+    mqttBrokerClient.Subscribe(GPIOGetSubscription);
   }
   
   //Check if we should post an update
   postUpdate = root["REST"]["ENABLED"];
+  POSTUsername = String((const char*)root["REST"]["USERNAME"]);
+  POSTPassword = String((const char*)root["REST"]["PASSWORD"]);
 }
 
 void loop()
@@ -132,8 +145,9 @@ void loop()
   if(publishToMQTT){
     delay(10);
     if(!mqttBrokerClient.Connected()){
-      mqttBrokerClient.Connect(flashStatus);
+      connectMQTT(MQTTUsername, MQTTPassword);
       mqttBrokerClient.Subscribe(GPIOUpdateSubscription);
+      mqttBrokerClient.Subscribe(GPIOGetSubscription);
     }
     mqttBrokerClient.Loop();
   }
@@ -153,12 +167,12 @@ void loop()
   //Update host
   if(expanderPort.Changed){ 
     String response = 
-      webserver.CreateUpdateResponse(expanderPort.ChangedPorts, expanderPort.LastReading);
+      webserver.CreateUpdateResponse(expanderPort.ChangedPorts, expanderPort.LastReading, MQTTPOLL);
     if(publishToMQTT){
       mqttBrokerClient.Publish(PublishTopic, response);
     }
     if(postUpdate){
-      webserver.SendGPIOUpdate(response);
+      webserver.SendGPIOUpdate(response, POSTUsername, POSTPassword);
     }
     flagGPIOUpdated();
   }
@@ -170,7 +184,13 @@ void loop()
 void messageReceived(String topic, String payload, char * bytes, unsigned int length) {
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(payload);
-  updateGPIOPins(root);
+  int requestId = root["ID"];
+  if(topic == GPIOGetSubscription && requestId == id){
+        mqttBrokerClient.Publish(PublishTopic, webserver.GetGPIOResponse(expanderPort.LastReading, MQTTREQUEST));
+  }
+  if(topic == GPIOUpdateSubscription && (int)root["ID"] == id){
+     updateGPIOPins(root);
+  }
 }
 
 void flagGPIOUpdated(){
@@ -199,7 +219,7 @@ void updateGPIOPins(JsonObject& root){
 
 //GET calls
 void getGPIO(){
-  String response = webserver.GetGPIOResponse(expanderPort.LastReading);
+  String response = webserver.GetGPIOResponse(expanderPort.LastReading, MQTTREQUEST);
   server.send(200, "application/json", response);
 }
 
@@ -236,3 +256,13 @@ void flashStatus(int ms){
   digitalWrite(STATUS_PORT, LOW);
   delay(ms);
 }
+
+void connectMQTT(String username, String password){
+  if(username != "" && password != ""){
+    mqttBrokerClient.Connect(flashStatus, username, password);
+  }
+  else{
+    mqttBrokerClient.Connect(flashStatus);
+  }
+}
+
