@@ -93,3 +93,22 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 		Serial.println("Failed to Connect to POST server");
 	}
  }
+ 
+ String WebServer::CreateUpdateResponse(byte changedPorts, byte lastReading){
+	DynamicJsonBuffer jsonBuffer;
+    JsonObject& response = jsonBuffer.createObject();
+    response["ID"] = DeviceId;
+    JsonArray& gpioArray = response.createNestedArray("GPIO");
+    for(int a=0;a<GPIOCount;a++){
+      if(bitRead(changedPorts, a)){
+        JsonObject& gpioObject = jsonBuffer.createObject();
+        gpioObject["PIN"] = 1 + a;
+        gpioObject["VALUE"] = bitRead(lastReading, a);
+        gpioArray.add(gpioObject);
+      }
+    }
+    int responseBufferSize = response.measureLength()+1;
+    char responseBuffer[responseBufferSize];
+    response.printTo(responseBuffer, responseBufferSize);
+    return String(responseBuffer);
+ }

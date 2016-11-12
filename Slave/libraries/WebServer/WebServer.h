@@ -31,6 +31,7 @@ class WebServer
 	String GetBME280Response(float celcius, float pressure, 
 							 float altitude, float humidity);
     String GetGPIOResponse(byte expanderPort);
+	String CreateUpdateResponse(byte changedPorts, byte lastReading);
 	void SendGPIOUpdate(String response);
 };
 

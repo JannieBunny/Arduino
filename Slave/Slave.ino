@@ -1,4 +1,3 @@
-//ESP8266 - Webserver/client and basic sensors with SD card config
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 #include <MQTTClient.h>
@@ -50,12 +49,10 @@ void setup()
 
   //Init SD Card
   SDconfig.Begin(16, flashStatus);
-  //Get API docs
   apiDocs = SDconfig.ReadIntoString("api.con", 3500);
-  //Get homepage
   homePage = SDconfig.ReadIntoString("home.slv", 3500);
-  //Find SDconfig file from SD Card
   json = SDconfig.ReadIntoString("config.slv", 1000);
+  
   //Read SDconfig from File
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(json); 
@@ -155,7 +152,8 @@ void loop()
 
   //Update host
   if(expanderPort.Changed){ 
-    String response = createUpdateResponse();
+    String response = 
+      webserver.CreateUpdateResponse(expanderPort.ChangedPorts, expanderPort.LastReading);
     if(publishToMQTT){
       mqttBrokerClient.Publish(PublishTopic, response);
     }
@@ -173,25 +171,6 @@ void messageReceived(String topic, String payload, char * bytes, unsigned int le
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(payload);
   updateGPIOPins(root);
-}
-
-String createUpdateResponse(){
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& response = jsonBuffer.createObject();
-    response["ID"] = id;
-    JsonArray& gpioArray = response.createNestedArray("GPIO");
-    for(int a=0;a<MAX_GPIO;a++){
-      if(bitRead(expanderPort.ChangedPorts, a)){
-        JsonObject& gpioObject = jsonBuffer.createObject();
-        gpioObject["PIN"] = 1 + a;
-        gpioObject["VALUE"] = bitRead(expanderPort.LastReading, a);
-        gpioArray.add(gpioObject);
-      }
-    }
-    int responseBufferSize = response.measureLength()+1;
-    char responseBuffer[responseBufferSize];
-    response.printTo(responseBuffer, responseBufferSize);
-    return String(responseBuffer);
 }
 
 void flagGPIOUpdated(){
@@ -225,18 +204,14 @@ void getGPIO(){
 }
 
 void getBME280(){
-  String response = webserver.GetBME280Response(bme280.readTempC(), 
-                              bme280.readFloatPressure(),
-                              bme280.readFloatAltitudeMeters(), 
-                              bme280.readFloatHumidity());
+  String response = webserver.GetBME280Response(bme280.readTempC(), bme280.readFloatPressure(),
+                              bme280.readFloatAltitudeMeters(), bme280.readFloatHumidity());
   server.send(200, "application/json", response);
 }
 
 void getHome(){
-  String page = webserver.GetHomePageResponse(homePage, expanderPort.LastReading,
-                                            bme280.readTempC(), 
-                                            bme280.readFloatPressure(),
-                                            bme280.readFloatAltitudeMeters(), 
+  String page = webserver.GetHomePageResponse(homePage, expanderPort.LastReading, bme280.readTempC(), 
+                                            bme280.readFloatPressure(), bme280.readFloatAltitudeMeters(), 
                                             bme280.readFloatHumidity());
   server.send(200, "text/html", page);
 }
@@ -249,8 +224,9 @@ void getAPIDocs(){
 //Helpers
 String ipToString(IPAddress ip){
   String temp="";
-  for (int i=0; i<4; i++)
+  for (int i=0; i<4; i++){
     temp += i  ? "." + String(ip[i]) : String(ip[i]);
+  }
   return temp;
 }
 
