@@ -9,9 +9,6 @@
 #include "ESP8266WebServer.h"
 #include "base64.h"
 
-String Ip;
-String DeviceIdentity;
-
 int DeviceId;
 int GPIOCount;
 
@@ -21,37 +18,16 @@ int Port;
 
 base64 encoder;
 
-String WebServer::GetHomePageResponse(String page, byte expanderPort, 
-										float celcius, float pressure, 
-										float altitude, float humidity){ 
-	String temp = page.substring(0); 
-	temp.replace("{{friendlyName}}", DeviceIdentity);
-	temp.replace("{{apiLink}}", Ip);
-	temp.replace("{{celcius}}", String(celcius));
-	temp.replace("{{pressure}}", String(pressure));
-	temp.replace("{{altitude}}", String(altitude));
-	temp.replace("{{humidity}}", String(humidity));
-	for(int a=0;a<GPIOCount;a++){
-		temp.replace("{{gpio" + String(a + 1) + "}}", String(bitRead(expanderPort, a)));
-	}
-	return temp; 
-}
-
-String WebServer::GetAPIPageResponse(String page){
-	page.replace("{{host}}", Ip);
-	page.replace("{{friendlyName}}", DeviceIdentity);
-	return page;
-}
 
 String WebServer::GetBME280Response(float celcius, float pressure, 
 									float altitude, float humidity){
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& response = jsonBuffer.createObject();
 	response["ID"] = DeviceId;
-	response["CELCIUS"] = String(celcius);
-	response["PRESSURE"] = String(pressure);
-	response["ALTITUDE"] = String(altitude);
-	response["HUMIDITY"] = String(humidity);
+	response["Celcius"] = String(celcius);
+	response["Pressure"] = String(pressure);
+	response["Altiture"] = String(altitude);
+	response["Humididty"] = String(humidity);
 	char responseString[response.measureLength()+1];
 	response.printTo(responseString, response.measureLength()+1);
 	return String(responseString);
@@ -61,12 +37,12 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& response = jsonBuffer.createObject();
 	response["ID"] = DeviceId;
-	response["TYPE"] = requestType;
+	response["Type"] = requestType;
 	JsonArray& nestedArray = response.createNestedArray("GPIO");
 	for(int a=0;a<GPIOCount;a++){
 		JsonObject& nestedObject = nestedArray.createNestedObject();
-		nestedObject["PIN"] = a + 1;
-		nestedObject["VALUE"] = (int)bitRead(expanderPort, a);
+		nestedObject["Pin"] = a + 1;
+		nestedObject["Value"] = (int)bitRead(expanderPort, a);
 	}
 	char responseString[response.measureLength()+1];
 	response.printTo(responseString, response.measureLength()+1);
@@ -106,13 +82,13 @@ String WebServer::GetBME280Response(float celcius, float pressure,
 	DynamicJsonBuffer jsonBuffer;
     JsonObject& response = jsonBuffer.createObject();
     response["ID"] = DeviceId;
-	response["TYPE"] = requestType;
+	response["Type"] = requestType;
     JsonArray& gpioArray = response.createNestedArray("GPIO");
     for(int a=0;a<GPIOCount;a++){
       if(bitRead(changedPorts, a)){
         JsonObject& gpioObject = jsonBuffer.createObject();
-        gpioObject["PIN"] = 1 + a;
-        gpioObject["VALUE"] = bitRead(lastReading, a);
+        gpioObject["Pin"] = 1 + a;
+        gpioObject["Value"] = bitRead(lastReading, a);
         gpioArray.add(gpioObject);
       }
     }

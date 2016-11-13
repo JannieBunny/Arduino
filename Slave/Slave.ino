@@ -11,6 +11,8 @@
 #include <MQTTActions.h>
 
 #define MAX_GPIO 8
+#define MAX_SENSORS 4
+
 #define STATUS_PORT 10
 #define EXPANDER_ADRRESS 0x20
 
@@ -25,23 +27,41 @@ String json;
 String homePage;
 String apiDocs;
 
+int id;
+byte count;
+
+//MQTT Config
+bool publishToMQTT;
+String GPIOUpdateTopic;
+String GPIOGetTopic;
+String GPIORequestTopic;
+String BaseTopic;
+String MQTTUsername;
+String MQTTPassword;
+
+//MQTT Base Config
 const char* MQTTREQUEST = "REQUEST";
 const char* MQTTPOLL = "INTERRUPT";
 
-int id;
-byte count;
-byte poll;
-bool postUpdate;
-bool publishToMQTT;
-
-String GPIOUpdateTopic;
-String GPIOGetTopic;
-String BaseTopic;
-
-String MQTTUsername;
-String MQTTPassword;
+//Post Config
+bool PostUpdate;
 String POSTUsername;
 String POSTPassword;
+
+//API Config
+bool APIEnabled;
+String APIBaseURL;
+
+//BME280 Sensor COnfig
+bool bme280Enabled = false;
+const char* BME280Sensor = "BME280";
+//Endpoints
+const char* Celcius;
+const char* Altitude;
+const char* Pressure;
+const char* Humididty;
+String BME280BaseTopic;
+String BME280Request;
 
 void setup()
 { 
@@ -59,8 +79,6 @@ void setup()
 
   //Init SD Card
   SDconfig.Begin(16, flashStatus);
-  apiDocs = SDconfig.ReadIntoString("api.con", 3500);
-  homePage = SDconfig.ReadIntoString("home.slv", 3500);
   json = SDconfig.ReadIntoString("config.slv", 1000);
   
   //Read SDconfig from File
@@ -68,12 +86,12 @@ void setup()
   JsonObject& root = jsonBuffer.parseObject(json); 
   
   //Identity
-  const char* identity = root["DEVICE"]["IDENTITY"];
-  id = root["DEVICE"]["ID"];
+  const char* identity = root["Device"]["Identity"];
+  id = root["Device"]["ID"];
 
   //Connect to WiFi
-  const char* ssid = root["WIFI"]["SSID"];
-  const char* password = root["WIFI"]["PASSWORD"];
+  const char* ssid = root["WiFi"]["Ssid"];
+  const char* password = root["WiFi"]["Password"];
 
   //https://github.com/esp8266/Arduino/issues/2186
   WiFi.persistent(false);
@@ -86,58 +104,81 @@ void setup()
     flashStatus(50);
   }
   
-  webserver.Host = String((const char*)root["REST"]["HOST"]);
-  webserver.Url = String((const char*)root["REST"]["URL"]);
-  webserver.Port = root["REST"]["PORT"];
+  //Check if we should post an update
+  JsonObject& rest = root["Rest"];
+  PostUpdate = rest["Enabled"];
+  if(PostUpdate){
+    POSTUsername = String((const char*)rest["Username"]);
+    POSTPassword = String((const char*)rest["Password"]);
+    //Config to build POST requests
+    webserver.Host = String((const char*)rest["Host"]);
+    webserver.Url = String((const char*)rest["Url"]);
+    webserver.Port = rest["Port"];
+  }
+
+  JsonObject& api = root["Api"];
+  APIEnabled = api["Enabled"];
+  if(APIEnabled){
+    APIBaseURL = (const char*)api["BaseUrl"];
+    String gpioGet = (const char*)api["GPIOGet"];
+    String gpioUpdate = (const char*)api["GPIOUpdate"];
+    server.on((APIBaseURL + gpioUpdate).c_str(), HTTP_PUT, updateGPIO);
+    server.on((APIBaseURL + gpioGet).c_str(), HTTP_GET, getGPIO);
+    server.begin();
+  }
   
-  webserver.DeviceIdentity = String(identity);
-  webserver.Ip = ipToString(WiFi.localIP());
   webserver.GPIOCount = MAX_GPIO;
   webserver.DeviceId = id;
-
-  server.on("/", HTTP_GET, getHome);
-//  server.on("/api", HTTP_GET, getAPIDocs);
-//  server.on("/api/GPIO/update", HTTP_PUT, updateGPIO);
-//  server.on("/api/GPIO/get", HTTP_GET, getGPIO);
-//  server.on("/api/BME280/get", HTTP_GET, getBME280);
-  
-  server.begin();
-
-  bme280.settings.I2CAddress = 0x77;
-  bme280.settings.runMode = 3;
-  bme280.settings.tStandby = 2;
-  bme280.settings.filter = 0;
-  bme280.settings.tempOverSample = 1;
-  bme280.settings.pressOverSample = 1;
-  bme280.settings.humidOverSample = 1;
   
   delay(10);
-  bme280.begin();
 
-  publishToMQTT = root["MQTT"]["ENABLED"];
+  publishToMQTT = root["MQTT"]["Enabled"];
   if(publishToMQTT){
     delay(10);
     JsonObject& mqttSettings = root["MQTT"];
-    MQTTUsername = String((const char*)mqttSettings["USERNAME"]);
-    MQTTPassword = String((const char*)mqttSettings["PASSWORD"]);
+    MQTTUsername = String((const char*)mqttSettings["Username"]);
+    MQTTPassword = String((const char*)mqttSettings["Password"]);
     
-    BaseTopic = String((const char*)mqttSettings["BASETOPIC"]);
-    GPIOUpdateTopic = String((const char*)mqttSettings["GPIOUPDATE"]);
-    GPIOGetTopic = String((const char*)mqttSettings["GPIOSTATUS"]);
+    BaseTopic = String((const char*)mqttSettings["BaseTopic"]);
+    GPIOUpdateTopic = String((const char*)mqttSettings["GPIOUpdate"]);
+    GPIOGetTopic = String((const char*)mqttSettings["GPIOStatus"]);
+    GPIORequestTopic = String((const char*)mqttSettings["GPIORequest"]);
     
     mqttBrokerClient.ClientName = String(id);
-    mqttBrokerClient.Broker = String((const char*)mqttSettings["BROKER"]);
-    mqttBrokerClient.BrokerPort = mqttSettings["PORT"];
+    mqttBrokerClient.Broker = String((const char*)mqttSettings["Broker"]);
+    mqttBrokerClient.BrokerPort = mqttSettings["Port"];
     mqttBrokerClient.Begin();
     connectMQTT(MQTTUsername, MQTTPassword);
+
+    //Subscribe
     mqttBrokerClient.Subscribe(BaseTopic + GPIOUpdateTopic);
-    subscribeToGPIO();
+    mqttBrokerClient.Subscribe(BaseTopic + GPIORequestTopic);
   }
-  
-  //Check if we should post an update
-  postUpdate = root["REST"]["ENABLED"];
-  POSTUsername = String((const char*)root["REST"]["USERNAME"]);
-  POSTPassword = String((const char*)root["REST"]["PASSWORD"]);
+
+  //Loop through any sensors found in config
+  JsonArray& sensors = root["Sensors"];
+  for(int a=0;a<MAX_SENSORS;a++){
+    JsonObject& sensor = sensors[a];
+    String sensorType = String((const char*)sensor["Type"]);
+    if(sensorType == String(BME280Sensor)){
+      bme280.settings.I2CAddress = 0x77;
+      bme280.settings.runMode = 3;
+      bme280.settings.tStandby = 2;
+      bme280.settings.filter = 0;
+      bme280.settings.tempOverSample = 1;
+      bme280.settings.pressOverSample = 1;
+      bme280.settings.humidOverSample = 1;
+      bme280.begin();
+      JsonObject& configUrls = sensor["ConfigUrls"];
+      BME280BaseTopic = String((const char*)configUrls["BaseTopic"]);
+      BME280Request = String((const char*)configUrls["Request"]);
+      if(APIEnabled){
+         server.on((APIBaseURL + String(BaseTopic)).c_str() , HTTP_GET, getBME280);
+      }
+      mqttBrokerClient.Subscribe(BaseTopic + BME280BaseTopic + BME280Request);
+      bme280Enabled = true;
+    }
+  }
 }
 
 void loop()
@@ -152,7 +193,10 @@ void loop()
     if(!mqttBrokerClient.Connected()){
       connectMQTT(MQTTUsername, MQTTPassword);
       mqttBrokerClient.Subscribe(BaseTopic + GPIOUpdateTopic);
-      subscribeToGPIO();
+      mqttBrokerClient.Subscribe(BaseTopic + GPIORequestTopic);
+      if(bme280Enabled){
+        mqttBrokerClient.Subscribe(BaseTopic + BME280BaseTopic + BME280Request);
+      }
     }
     mqttBrokerClient.Loop();
   }
@@ -161,19 +205,12 @@ void loop()
   server.handleClient();
   
   count++;
-  poll++;
   bool changed = false;
 
   //Trigger every one second
-  if(count == 4){
+  if(count == 10){
     expanderPort.GetStatus();
     count = 0;
-  }
-
-  //Update the listeners every 20seconds
-  if(poll == 240){
-    mqttBrokerClient.Publish(BaseTopic + GPIOGetTopic, webserver.GetGPIOResponse(expanderPort.LastReading, MQTTPOLL));
-    poll = 0;
   }
 
   //Update host
@@ -182,43 +219,31 @@ void loop()
       webserver.CreateUpdateResponse(expanderPort.ChangedPorts, expanderPort.LastReading, MQTTPOLL);
     if(publishToMQTT){
       mqttBrokerClient.Publish(BaseTopic + GPIOGetTopic, response);
-      for(int a=0;a<MAX_GPIO;a++){
-        if(bitRead(expanderPort.ChangedPorts, a)){
-          mqttBrokerClient.Publish(BaseTopic + 
-                                    GPIOGetTopic + 
-                                    String("/") + 
-                                    String(a+1), 
-                                    String(bitRead(expanderPort.LastReading, a)));  
-        }
-      }
     }
-    if(postUpdate){
+    if(PostUpdate){
       webserver.SendGPIOUpdate(response, POSTUsername, POSTPassword);
     }
     flagGPIOUpdated();
   }
   else{
-    delay(200); 
+    delay(100); 
   }
 }
 
 void messageReceived(String topic, String payload, char * bytes, unsigned int length) {
-  byte newStatus = expanderPort.LastReading;
-  for(int a=0;a<MAX_GPIO;a++){
-    String incommingTopic = BaseTopic + GPIOUpdateTopic + String("/") + String(a+1);
-    if(incommingTopic == topic){
-      bitWrite(newStatus, a, payload.toInt());
-    }
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(payload);
+  int requestId = root["ID"];
+  if(topic == (BaseTopic + GPIOUpdateTopic) && id == requestId){
+     updateGPIOPins(root);
   }
-  expanderPort.SetStatus(newStatus);
-  if(length != 1){
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& root = jsonBuffer.parseObject(payload);
-    int requestId = root["ID"];
-    if((int)root["ID"] == id){
-       updateGPIOPins(root);
-       mqttBrokerClient.Publish(BaseTopic + GPIOGetTopic, webserver.GetGPIOResponse(expanderPort.LastReading, MQTTREQUEST));
-    }
+  if(topic == (BaseTopic + GPIORequestTopic) && id == requestId){
+     mqttBrokerClient.Publish(BaseTopic + GPIOGetTopic, webserver.GetGPIOResponse(expanderPort.LastReading, MQTTREQUEST));
+  }
+  if(topic == (BaseTopic + BME280BaseTopic + BME280Request) && id == requestId){
+    String response = webserver.GetBME280Response(bme280.readTempC(), bme280.readFloatPressure(),
+                            bme280.readFloatAltitudeMeters(), bme280.readFloatHumidity());
+    mqttBrokerClient.Publish(BaseTopic + BME280BaseTopic, response);
   }
 }
 
@@ -236,8 +261,8 @@ void updateGPIO(){
 void updateGPIOPins(JsonObject& root){
     byte newStatus = expanderPort.LastReading;
     for(int a=0;a<MAX_GPIO;a++){
-      int pin = root["GPIO"][a]["PIN"];
-      int pinValue = root["GPIO"][a]["VALUE"];
+      int pin = root["GPIO"][a]["Pin"];
+      int pinValue = root["GPIO"][a]["Value"];
       if(pin != 0){
           bitWrite(newStatus, pin-1, pinValue);
       }
@@ -251,31 +276,11 @@ void getGPIO(){
   server.send(200, "application/json", response);
 }
 
+//BME280
 void getBME280(){
   String response = webserver.GetBME280Response(bme280.readTempC(), bme280.readFloatPressure(),
                               bme280.readFloatAltitudeMeters(), bme280.readFloatHumidity());
   server.send(200, "application/json", response);
-}
-
-void getHome(){
-  String page = webserver.GetHomePageResponse(homePage, expanderPort.LastReading, bme280.readTempC(), 
-                                            bme280.readFloatPressure(), bme280.readFloatAltitudeMeters(), 
-                                            bme280.readFloatHumidity());
-  server.send(200, "text/html", page);
-}
-
-void getAPIDocs(){
-  apiDocs = webserver.GetAPIPageResponse(apiDocs);
-  server.send(200, "text/html", apiDocs);
-}
-
-//Helpers
-String ipToString(IPAddress ip){
-  String temp="";
-  for (int i=0; i<4; i++){
-    temp += i  ? "." + String(ip[i]) : String(ip[i]);
-  }
-  return temp;
 }
 
 void flashStatus(int ms){
@@ -291,15 +296,6 @@ void connectMQTT(String username, String password){
   }
   else{
     mqttBrokerClient.Connect(flashStatus);
-  }
-}
-
-void subscribeToGPIO(){
-  for(int a=0;a<MAX_GPIO;a++){
-    mqttBrokerClient.Subscribe(BaseTopic + 
-                                GPIOUpdateTopic + 
-                                String("/") + 
-                                String(a+1));
   }
 }
 

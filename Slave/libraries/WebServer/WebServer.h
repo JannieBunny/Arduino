@@ -13,8 +13,6 @@
 class WebServer
 {
   public:
-  	String Ip;
-  	String DeviceIdentity;
 	String Host;
 	String Url;
 	int Port;
@@ -22,13 +20,6 @@ class WebServer
 	int DeviceId;
 	int GPIOCount;
 	
-	String GetHomePageResponse(String page, 
-								byte expanderPort, 
-								float celcius, 
-								float pressure, 
-								float altitude, 
-								float humidity);
-	String GetAPIPageResponse(String page);
 	String GetBME280Response(float celcius, float pressure, 
 							 float altitude, float humidity);
     String GetGPIOResponse(byte expanderPort, String requestType);
