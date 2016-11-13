@@ -158,17 +158,20 @@ void messageReceived(String topic, String payload, char * bytes, unsigned int le
   DynamicJsonBuffer jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(payload);
   int requestId = root["ID"];
-  if(topic == (BaseTopic + GPIOUpdateTopic) && id == requestId){
-     updateGPIOPins(root);
-  }
-  if(topic == (BaseTopic + GPIORequestTopic) && id == requestId){
-     mqttBrokerClient.Publish(BaseTopic + GPIOGetTopic, gpioResponses.GetGPIOResponse(expanderPort.LastReading, MQTTREQUEST));
-  }
-
-  //BME280 Sensor
-  if(bme280Sensor.ValidateTopic(BaseTopic, topic)){
-    String response = bme280Sensor.Get();
-    mqttBrokerClient.Publish(BaseTopic + bme280Sensor.BME280Topic, response);
+  //Was the message intended for me?
+  if(id == requestId){
+    if(topic == (BaseTopic + GPIOUpdateTopic)){
+       updateGPIOPins(root);
+    }
+    if(topic == (BaseTopic + GPIORequestTopic)){
+       mqttBrokerClient.Publish(BaseTopic + GPIOGetTopic, gpioResponses.GetGPIOResponse(expanderPort.LastReading, MQTTREQUEST));
+    }
+  
+    //BME280 Sensor
+    if(bme280Sensor.ValidateTopic(BaseTopic, topic)){
+      String response = bme280Sensor.Get();
+      mqttBrokerClient.Publish(BaseTopic + bme280Sensor.BME280Topic, response);
+    }
   }
 }
 
