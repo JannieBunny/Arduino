@@ -8,10 +8,7 @@ I need to store my code somewhere afterall.
 
 ### TODO
 
-1. Clean up custom libs
-2. Move MQTT calls from main to libs
-3. Split webserver lib into API and actual Webserver parts
-4. Create BME280 lib and merge it with sparkfun lib
+1. Move MQTT calls from main to libs
 
 Ughhh so much to do...
 
@@ -22,20 +19,6 @@ Ughhh so much to do...
   "Device": {
     "ID": 1,
     "Identity": "Bedroom Light"
-  },
-  "Rest": {
-    "Enabled": true,
-    "Host": "172.24.1.1",
-    "Port": 80,
-    "Url": "/api/device",
-    "Username": "",
-    "Password": ""
-  },
-  "Api": {
-    "Enabled": true,
-    "BaseUrl": "/api",
-    "GPIOGet": "/get",
-    "GPIOUpdate": "/update"
   },
   "MQTT": {
     "Enabled": true,
@@ -51,15 +34,6 @@ Ughhh so much to do...
   "WiFi": {
     "Ssid": "ssid",
     "Password": "password"
-  },
-  "Sensors": [
-    {
-      "Type": "BME280",
-      "ConfigUrls": {
-        "BaseTopic": "/bme280",
-        "Request": "/request"
-      }
-    }
-  ]
+  }
 }
 ```
