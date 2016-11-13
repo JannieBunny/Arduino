@@ -173,7 +173,7 @@ void setup()
       BME280BaseTopic = String((const char*)configUrls["BaseTopic"]);
       BME280Request = String((const char*)configUrls["Request"]);
       if(APIEnabled){
-         server.on((APIBaseURL + String(BaseTopic)).c_str() , HTTP_GET, getBME280);
+         server.on((APIBaseURL + BME280BaseTopic).c_str() , HTTP_GET, getBME280);
       }
       mqttBrokerClient.Subscribe(BaseTopic + BME280BaseTopic + BME280Request);
       bme280Enabled = true;
