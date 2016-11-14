@@ -9,6 +9,9 @@ I need to store my code somewhere afterall.
 ### TODO
 
 1. Move MQTT calls from main to libs
+2. Make use of abstract class for sensors and store all my sensors in an array
+3. Add a welcome message with all connected sensors
+4. Add a timeout ping probably 30 seconds? ya, that should do
 
 Ughhh so much to do...
 
