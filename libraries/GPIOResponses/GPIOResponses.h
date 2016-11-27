@@ -13,6 +13,7 @@ class GPIOResponses
   public:	
 	int GPIODeviceId;
 	int GPIOCount;
+	String GPIODeviceFriendlyName;
 	
     String GetGPIOResponse(byte expanderPort, String requestType);
 	String CreateUpdateResponse(byte changedPorts, byte lastReading, String requestType);

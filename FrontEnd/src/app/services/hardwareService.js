@@ -15,19 +15,16 @@
                 devicesOnline = [];
                 $timeout(function(){
                     $rootScope.$broadcast('devices-online', _.map(devicesOnline, function(device){
-                        return device.ID;
+                        return {
+                            ID: device.ID,
+                            FriendlyName: device.FriendlyName
+                        };
                     }));
-                }, 3000);
+                }, 1500);
             }
 
             self.getSensors = function(){
                 requestSensorsData();
-                sensorsOnline = [];
-                $timeout(function(){
-                    $rootScope.$broadcast('sensors-online', _.map(sensorsOnline, function(sensor){
-                        return sensor.ID;
-                    }));
-                }, 3000);
             };
             
             function requestSensorsData(){
@@ -70,7 +67,7 @@
                                 GPIO: device.GPIO
                             });
                         }
-                        if(device.UpdateType > 0){
+                        if(device.UpdateType < 0){
                             $rootScope.$broadcast('sensors-updated', device);
                         }
                     });

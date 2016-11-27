@@ -83,6 +83,7 @@ void setup()
   delay(10);
 
   gpioResponses.GPIODeviceId = id;
+  gpioResponses.GPIODeviceFriendlyName = String(identity);
   gpioResponses.GPIOCount = MAX_GPIO;
   publishToMQTT = root["MQTT"]["Enabled"];
   if(publishToMQTT){
@@ -109,6 +110,7 @@ void setup()
 
   //Detect any sensors
   bme280Sensor.BME280DeviceId = id;
+  bme280Sensor.BME280FriendlyName = String(identity);
   bme280Sensor.Begin("/bme280", "/request");
   if(bme280Sensor.BME280Detected){
       mqttBrokerClient.Subscribe(BaseTopic + bme280Sensor.BME280Topic + bme280Sensor.BME280RequestTopic);
@@ -144,7 +146,7 @@ void loop()
 
   //Update host
   if(expanderPort.Changed){ 
-    String response = 
+    String response =
       gpioResponses.CreateUpdateResponse(expanderPort.ChangedPorts, expanderPort.LastReading, MQTTPOLL);
     mqttBrokerClient.Publish(BaseTopic + GPIOGetTopic, response);
     flagGPIOUpdated();
@@ -168,7 +170,7 @@ void messageReceived(String topic, String payload, char * bytes, unsigned int le
     }
   
     //BME280 Sensor
-    if(bme280Sensor.ValidateTopic(BaseTopic, topic)){
+    if(bme280Sensor.BME280Detected && bme280Sensor.ValidateTopic(BaseTopic, topic)){
       String response = bme280Sensor.Get();
       mqttBrokerClient.Publish(BaseTopic + bme280Sensor.BME280Topic, response);
     }

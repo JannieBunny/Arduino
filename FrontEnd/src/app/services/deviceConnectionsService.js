@@ -2,7 +2,7 @@
     var app = angular.module('app');
     app.service('deviceConnectionsService', function($websocket, $rootScope){
 
-        var socketUrl = "ws://192.168.8.101:8090";
+        var socketUrl = "ws://192.168.8.105:8090";
         var socket;
 
         this.init = function(){

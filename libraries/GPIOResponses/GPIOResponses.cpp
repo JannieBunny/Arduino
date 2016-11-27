@@ -9,11 +9,13 @@
 
 int GPIODeviceId;
 int GPIOCount;
+String GPIODeviceFriendlyName;
  
  String GPIOResponses::GetGPIOResponse(byte expanderPort, String requestType){
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& response = jsonBuffer.createObject();
 	response["ID"] = GPIODeviceId;
+	response["FriendlyName"] = GPIODeviceFriendlyName;
 	response["Type"] = requestType;
 	JsonArray& nestedArray = response.createNestedArray("GPIO");
 	for(int a=0;a<GPIOCount;a++){
@@ -30,6 +32,7 @@ int GPIOCount;
 	DynamicJsonBuffer jsonBuffer;
     JsonObject& response = jsonBuffer.createObject();
     response["ID"] = GPIODeviceId;
+	response["FriendlyName"] = GPIODeviceFriendlyName;
 	response["Type"] = requestType;
     JsonArray& gpioArray = response.createNestedArray("GPIO");
     for(int a=0;a<GPIOCount;a++){

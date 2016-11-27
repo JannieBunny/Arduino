@@ -10,7 +10,7 @@
             updateDeviceGPIOTiles: updateDeviceGPIOTiles
         };
 
-        function generateDeviceGPIOTiles(ids, callBack){
+        function generateDeviceGPIOTiles(ids, callBack, title){
             var gpioDevices = [];
             _.each(ids, function(id){
                 var data1 = [];
@@ -32,19 +32,19 @@
                 }
                 var tile1 = {
                     ID: id,
-                    Type: 1,
+                    Type: 0,
                     color: "bg-amber",
                     icon: "fa fa-lightbulb-o",
-                    title: "GPIO",
+                    title: title || "GPIO",
                     data: data1,
                     canEdit: true
                 };
                 var tile2 = {
                     ID: id,
-                    Type: 1,
+                    Type: 0,
                     color: "bg-amber",
                     icon: "fa fa-lightbulb-o",
-                    title: "GPIO",
+                    title: title || "GPIO",
                     data: data2,
                     canEdit: true
                 };
@@ -73,8 +73,9 @@
         }
 
         function generateWeatherTile(id){
-            if(getTile(id, -1)){
-                return;
+            var tile = getTile(id, -1);
+            if(tile){
+                return tile;
             }
             var openWeatherMaps = {
                 ID: id,
@@ -130,7 +131,7 @@
 
         function getGPIOTiles(id){
             return _.filter(loadedTiles, function(tile){
-                return tile.Type === id && tile.Type === 0;
+                return tile.ID === id && tile.Type === 0;
             });
         }
 
