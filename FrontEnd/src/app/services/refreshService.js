@@ -2,22 +2,27 @@
     var app = angular.module('app');
     app.service('refreshService', function(){
 
-        var timer;
+        var timers = [];
+        var id = 0;
 
         this.start = function(delay, refresh){
-            if(timer){
-                timer.interval = delay;
-            }
-            else{
-                timer = new Tock({
-                    interval: delay,
-                    callback: refresh,
-                });
-            }
+            var timer = new Tock({
+                interval: delay,
+                callback: refresh,
+            });
             timer.start();
+            id++;
+            timers.push({
+                ID: id,
+                timer: timer
+            });
+            return id;
         };
 
-        this.stop = function(){
+        this.stop = function(id){
+            var timer = _.find(timers, function(timer){
+                return timer.ID === id;
+            });
             if(timer){
                 timer.stop();
                 timer.reset();
