@@ -1,0 +1,44 @@
+<div ng-controller="mainController">
+    <div class="app-bar red">
+        <a class="app-bar-element" ng-click="refresh()">
+            <span class="mif-apps mif-2x"></span>
+        </a>
+        <span class="app-bar-divider"></span>
+        <a class="app-bar-element">Raspy</a>
+    </div>
+    <div class="flex">
+        <ul class="sidebar red limit-width">
+            <li ng-repeat="menuItem in menu">
+                <a ng-click="menuItem.action()">
+                    <span class="icon" ng-class="menuItem.icon"></span>
+                    <span class="title">{{menuItem.title}}</span>
+                    <span class="counter">{{menuItem.value}}</span>
+                </a>
+            </li>
+        </ul>
+        <div>
+            <div class="tile-wide fg-white" ng-class="tile.color" data-role="tile" 
+                ng-repeat="tile in tiles">
+                    <div class="tile-content iconic">
+                        <span class="icon top-right" ng-class="tile.icon"></span>
+                        <div class="padding10">
+                            <p class="no-margin text-shadow">
+                                <div ng-repeat="data in tile.data" class="sensor-data">
+                                    <span>{{data.title}}</span>
+                                    <label class="switch" ng-if="tile.canEdit">
+                                        <input type="checkbox" ng-model="data.value" 
+                                            ng-click="data.execute(data.pinValue, data.value, tile.ID)">
+                                        <span class="check"></span>
+                                    </label>
+                                    <span class="text-bold" ng-if="!tile.canEdit">
+                                        {{data.value}}&nbsp;{{data.metric}}
+                                    </span>
+                                </div>
+                            </p>
+                        </div>
+                        <span class="tile-label">{{tile.title}}</span>
+                    </div>
+            </div>
+        </dvi>
+    </div>
+</div>

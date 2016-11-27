@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Raspy</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/metro/3.0.15/css/metro.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/metro/3.0.15/css/metro-schemes.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/metro/3.0.15/css/metro-icons.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/metro/3.0.15/css/metro-colors.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/metro/3.0.15/css/metro-responsive.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/metro/3.0.15/css/metro-rtl.min.css" />
+    <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" 
+          integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/weather-icons/2.0.10/css/weather-icons.min.css" />
+    <!-- inject:css -->
+    <link rel="stylesheet" href="app/css/main.css">
+    <!-- endinject -->
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+    </head>
+  <body ng-app="app">
+    <div ui-view></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.5.8/angular.min.js"></script>
+    <script src="https://cdn.rawgit.com/AngularClass/angular-websocket/v2.0.0/dist/angular-websocket.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/metro/3.0.15/js/metro.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular-ui-router/0.3.2/angular-ui-router.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.16.0/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.2/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tocktimer/1.0.11/tock.min.js"></script>
+    <!-- inject:js -->
+    <script src="app.js"></script>
+    <script src="app/controllers/mainController.js"></script>
+    <script src="app/factories/tilesFactory.js"></script>
+    <script src="app/services/deviceConnectionsService.js"></script>
+    <script src="app/services/hardwareService.js"></script>
+    <script src="app/services/openWeatherMapSevice.js"></script>
+    <script src="app/services/refreshService.js"></script>
+    <script src="app/services/softwareService.js"></script>
+    <!-- endinject -->
+  </body>
+</html>
