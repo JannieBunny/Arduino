@@ -2,20 +2,20 @@ body {
   background-color: #76608A;
 }
 .tile-content.iconic .icon.top-right {
-  top: 30%;
+  top: 33%;
   left: 82%;
 }
 .flex {
   display: flex;
 }
 .flex .limit-width {
-  max-width: 220px;
+  max-width: 230px;
 }
 @media screen and (max-width: 800px) {
   .sensor-data {
     display: flex;
     justify-content: space-between;
-    width: 160px;
+    width: 165px;
     margin-bottom: 4px;
   }
 }

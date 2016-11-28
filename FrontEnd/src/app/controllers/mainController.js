@@ -25,7 +25,7 @@
 		$scope.menu = [{
 			ID: 1,
 			title: "Connected Sensors",
-			value: 1,
+			value: 0,
 			icon: "mif-broadcast"
 		}];
 
